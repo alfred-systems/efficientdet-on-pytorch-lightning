@@ -1,8 +1,9 @@
 import wandb
 from pytorch_lightning.loggers.wandb import *
-from pytorch_lightning.utilities.imports import _WANDB_GREATER_EQUAL_0_10_22
+# from pytorch_lightning.utilities.imports import _WANDB_GREATER_EQUAL_0_10_22
 import shutil
 
+_WANDB_GREATER_EQUAL_0_10_22 = True
 
 class Another_WandbLogger(WandbLogger):
 

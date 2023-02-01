@@ -141,6 +141,9 @@ class COCO_EfficientDet(pl.LightningModule):
         inputs, labels = batch
         preds, anchors = self.model(inputs, detect=False)
         sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
+        
+        sync_labels = sync_labels.to(preds.device)
+        anchors = anchors.to(preds.device)  # BUG: anchors is a Tensor, won't be auto move to correct device by DDP
 
         loss, cls_loss, reg_loss = self.loss(preds, anchors, sync_labels)
         self.log('train_loss', loss)

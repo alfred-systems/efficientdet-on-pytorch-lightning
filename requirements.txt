@@ -1,0 +1,8 @@
+pytorch-lightning >= 1.6.5
+wandb >= 0.12.21
+hydra-core
+albumentations >= 1.2.1
+pycocotools
+timm
+loguru
+fire
