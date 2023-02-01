@@ -1,4 +1,5 @@
 import datetime
+from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -87,7 +88,6 @@ class COCO_EfficientDet(pl.LightningModule):
         self.val_result_dir = None
         self.test_result_dir = None
 
-
     def configure_model(self):
         model = EfficientDet(self.coeff, 80, False, self.pretrained_backbone)
 
@@ -158,6 +158,8 @@ class COCO_EfficientDet(pl.LightningModule):
         preds, _ = self.model(inputs, detect=True)
         preds = self.nms(preds)
 
+        # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
+
         for i, (scale, pad) in enumerate(zip(scales, pads)):
             preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
             preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
@@ -186,9 +188,10 @@ class COCO_EfficientDet(pl.LightningModule):
 
         if not self.val_result_dir:
             self.val_result_dir = os.path.join('result/val', datetime.datetime.now().strftime("run-%Y-%m-%d-%H-%M"))
-        result_file = os.path.join(self.val_result_dir, 'epoch-{}.json'.format(self.current_epoch))
+        result_file = os.path.join(self.val_result_dir, f'epoch-{self.global_rank}-{self.current_epoch}.json')
 
         val_metric = Evaluate_COCO(result, result_file, self.annFile, test=False)
+        # logger.debug(f"validation_epoch_end NODE_RANK: {self.global_rank}")
 
         self.log('AP', val_metric['AP'])
         self.log('AP50', val_metric['AP50'])

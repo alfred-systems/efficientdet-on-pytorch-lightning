@@ -38,6 +38,7 @@ class RetinaNet_Frame(nn.Module):
 
 
     def detect(self, out):
+        self.anchors = self.anchors.to(out.device)
         out[..., :2] = self.anchors[..., :2] + (out[..., :2] * self.anchors[..., 2:])
         out[..., 2:4] = torch.exp(out[..., 2:4]) * self.anchors[..., 2:]
 

@@ -44,7 +44,7 @@ def train(config_name=None, **kwargs):
         logger = Another_WandbLogger(**cfg.log)
 
         cfg_trainer = Config_Trainer(cfg.trainer)()
-        trainer = pl.Trainer(**cfg_trainer, logger=logger, num_sanity_val_steps=0)
+        trainer = pl.Trainer(**cfg_trainer, logger=logger, num_sanity_val_steps=1, limit_train_batches=1.0)
 
         logger.watch(pl_model)
 
