@@ -63,9 +63,6 @@ class COCO_Detection(VisionDataset):
             image = np.transpose(image, (2, 0, 1))
             image = torch.from_numpy(image)
 
-        image = image.to(device=device)
-
-
         for i, cat_id in enumerate(category_ids):
             new_id = self.cat_table[cat_id]
             category_ids[i] = make_one_hot(self.num_classes, new_id)
@@ -73,13 +70,13 @@ class COCO_Detection(VisionDataset):
         if category_ids:
             category_ids = torch.stack(category_ids)
         else:
-            category_ids = torch.tensor([], dtype=torch.int8, device=device)
+            category_ids = torch.tensor([], dtype=torch.int8)
 
-        bboxes = torch.from_numpy(np.asarray(bboxes)).to(device=device)
+        bboxes = torch.from_numpy(np.asarray(bboxes))
         label = torch.cat((bboxes, category_ids), dim=1)
 
         if len(label) == 0:
-            label = torch.zeros((0, 84), dtype=torch.int8, device=device)
+            label = torch.zeros((0, 84), dtype=torch.int8)
 
         return image, label
 

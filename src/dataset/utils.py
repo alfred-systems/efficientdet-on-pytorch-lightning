@@ -6,7 +6,7 @@ def make_one_hot(
         category_id: int
 ) -> Tensor:
 
-    return torch.from_numpy(np.eye(num_classes, dtype='int8')[category_id]).to(device)
+    return torch.from_numpy(np.eye(num_classes, dtype='int8')[category_id])
 
 
 

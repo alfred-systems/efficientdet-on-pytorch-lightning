@@ -44,10 +44,10 @@ class Validate_Detection(Dataset):
         p1 = diff // 2
         p2 = diff - diff // 2
         pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
-        pad = torch.tensor(pad, device=device)
+        pad = torch.tensor(pad)
 
         image = self.augmentor(image, None, None)['image']
-        image = image.to(device=device)
+        # image = image.to(device=device)
 
         return img_id, image, scale, pad
 
