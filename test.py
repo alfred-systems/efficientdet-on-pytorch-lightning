@@ -34,6 +34,33 @@ def test(cfg: DictConfig):
     else:
         raise RuntimeError('no checkpoint is given')
 
+def inferece():
+    from src.lightning_model import COCO_EfficientDet
+    from src.dataset.val_dataset import Validate_Detection
+    from torch.utils.data import DataLoader
 
+    pl_model = COCO_EfficientDet.load_from_checkpoint("./log/COCO_EfficientDet/n7ulowov/checkpoints/epoch=1-step=7394.ckpt")
+    print('model loaded')
+    pl_model = pl_model.to('cuda')
+    test_set = Validate_Detection("/home/ron_zhu/efficlipdet/sample", pl_model.model.img_size, [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]])
+    test_loader = DataLoader(test_set, batch_size=1)
+    for batch in test_loader:
+        print(batch[0])
+        predict = pl_model(batch[1], detect=True)[0]
+        box = predict[..., :4]
+        cls = predict[..., 4:]
+        # cls = torch.nn.functional.softmax(cls, dim=-1)
+        # cls = torch.nn.functional.sigmoid(cls)
+        for a, b in zip(cls[0], box[0]):
+            # print(a)
+            breakpoint()
+            if a.max() > 0.6:
+                print(b.int())
+                # print(a)
+        print(predict.shape)
+    # print(pl_model)
+
+    
 if __name__ == "__main__":
-    test()
+    # test()
+    inferece()

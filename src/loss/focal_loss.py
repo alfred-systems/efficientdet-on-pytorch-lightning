@@ -31,8 +31,8 @@ class Focal_Loss(nn.Module):
         self.average = average
 
 
-    @classmethod
-    def focal_loss(cls, cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
+    @staticmethod
+    def focal_loss(cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
 
         fore_pred = cls_pred[fore_idx]
         back_pred = cls_pred[back_idx]
@@ -57,8 +57,8 @@ class Focal_Loss(nn.Module):
         return loss
 
 
-    @classmethod
-    def smooothL1_loss(cls, reg_pred, anchors, fore_idx, fore_label_bbox, beta, mean):
+    @staticmethod
+    def smooothL1_loss(reg_pred, anchors, fore_idx, fore_label_bbox, beta, mean):
         fore_pred = reg_pred[fore_idx]
         fore_anchor = anchors.squeeze()[fore_idx]
 
@@ -97,7 +97,9 @@ class Focal_Loss(nn.Module):
 
         reg_preds = preds[..., :4]
         cls_preds = preds[..., 4:]
-        cls_preds = cls_preds.clamp(1e-5, 1.0 - 1e-5)
+        # cls_preds = torch.nn.functional.sigmoid(cls_preds).clamp(1e-5, 1.0 - 1e-5)
+        cls_preds = torch.nn.functional.softmax(cls_preds, dim=-1)
+        # cls_preds = cls_preds.clamp(1e-5, 1.0 - 1e-5)
 
         target_assigns = self.anchor_assigner(labels, anchors)
         cls_losses, reg_losses = [], []

@@ -4,9 +4,9 @@ defaults:
   - trainer: default
 
 
-batch_size: 4
-num_workers: 0
-ckpt_path:
+batch_size: 16
+num_workers: 12
+ckpt_path: 
 
 
 model:
