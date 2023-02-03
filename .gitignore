@@ -1,1 +1,6 @@
-.vscode
+.vscode/sftp.json
+outputs
+*.pyc
+log
+result
+lightning_logs

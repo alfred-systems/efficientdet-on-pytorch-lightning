@@ -114,7 +114,7 @@ class EfficientNet_Backbone(nn.Module):
         x = self.stage5(x)
         x = self.stage6(x)
         x = self.stage7(x)
-        x = self.conv_last(x)
+        # x = self.conv_last(x)
 
         return x
 
@@ -214,5 +214,28 @@ class FeatureExtractor(nn.Module):
         else:
             out = self.model(input)
             return self.features, out
+
+
+class FeaturePicker(nn.Module):
+    """
+    if model's output is a dictionary or iterable,
+    we can use this module to pick the subset of features to use.
+    """
+
+    def __init__(self,
+                 backbone: nn.Module,
+                 stages: List[Union[str, int]],
+                 ):
+        super().__init__()
+
+        self.timm_model, self.stages = backbone, stages
+        self.features = []
+
+    def forward(self, input):
+        self.features.clear()
+
+        features = self.timm_model(input)
+        out = [features[k] for k in self.stages]
+        return out
 
 
