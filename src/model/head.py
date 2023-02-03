@@ -9,22 +9,29 @@ class Classifier(nn.Module):
                  width: int,
                  num_anchors: int,
                  num_classes: int,
-                 Act: nn.Module = nn.SiLU()
+                 Act: nn.Module = nn.SiLU(),
+                 background_class: bool = True,
                  ):
-
+        num_classes += int(background_class)
         self.num_levels, self.num_anchors, self.num_classes \
             = num_levels, num_anchors, num_classes
 
         super().__init__()
 
-        self.conv_layers = nn.ModuleList([Seperable_Conv2d(width, width, 3, 1, bias=True)
-                                          for _ in range(depth)])
+        self.conv_layers = nn.ModuleList([
+            nn.Conv2d(width, width, kernel_size=3, stride=1, padding=1, bias=True)
+            # Seperable_Conv2d(width, width, 3, 1, bias=True)
+            for _ in range(depth)
+        ])
 
-        self.bn_layers = nn.ModuleList([nn.ModuleList([nn.BatchNorm2d(width) for _ in range(depth)])
-                                        for _ in range(num_levels)])
+        self.bn_layers = nn.ModuleList([
+            nn.ModuleList([nn.BatchNorm2d(width) for _ in range(depth)])
+            for _ in range(num_levels)
+        ])
         self.act = Act
 
-        self.conv_pred = Seperable_Conv2d(width, num_anchors * num_classes, bias=True)
+        self.conv_pred = nn.Conv2d(width, num_anchors * num_classes, kernel_size=3, stride=1, padding=1, bias=True)
+        # self.conv_pred = Seperable_Conv2d(width, num_anchors * num_classes, bias=True)
 
 
     def forward(self, features):
@@ -42,6 +49,8 @@ class Classifier(nn.Module):
             pred = pred.permute(0, 2, 3, 1)
             pred = pred.contiguous().view(pred.shape[0], pred.shape[1], pred.shape[2], self.num_anchors, self.num_classes)
             pred = pred.contiguous().view(pred.shape[0], -1, self.num_classes)
+            pred = torch.nn.functional.softmax(pred, dim=-1)
+            # pred = torch.nn.functional.sigmoid(pred)
 
             out.append(pred)
         out = torch.cat(out, dim=1)

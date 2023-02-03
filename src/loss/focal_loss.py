@@ -55,6 +55,36 @@ class Focal_Loss(nn.Module):
             loss = loss / num if num > 0 else loss
 
         return loss
+    
+    @staticmethod
+    def focal_smax_loss(cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
+
+        fore_pred = cls_pred[fore_idx]
+        back_pred = cls_pred[back_idx]
+        # bg_label = torch.zeros_like(back_pred)
+        # bg_label[..., -1] += 1
+
+        fore_pred_t = torch.where(fore_label_cls == 1, fore_pred, 1 - fore_pred)
+        back_pred_t = torch.cat([1 - back_pred[..., :-1], back_pred[..., -1:]], dim=-1)
+
+        fore_alpha_t = torch.where(fore_label_cls == 1, alpha, 1 - alpha)
+        back_alpha_t = torch.cat([
+            torch.ones_like(back_pred[..., :-1]) - alpha,
+            torch.zeros_like(back_pred[..., -1:]) + alpha,
+        ], dim=-1)
+
+        fore_weight = -1 * fore_alpha_t * torch.pow(1 - fore_pred_t, gamma)
+        back_weight = -1 * back_alpha_t * torch.pow(1 - back_pred_t, gamma)
+
+        fore_loss = fore_weight * torch.log(fore_pred_t)
+        back_loss = back_weight * torch.log(back_pred_t)
+
+        loss = torch.sum(fore_loss) + torch.sum(back_loss)
+        if mean:
+            num = fore_idx.size(0)
+            loss = loss / num if num > 0 else loss
+
+        return loss
 
 
     @staticmethod
@@ -97,9 +127,7 @@ class Focal_Loss(nn.Module):
 
         reg_preds = preds[..., :4]
         cls_preds = preds[..., 4:]
-        # cls_preds = torch.nn.functional.sigmoid(cls_preds).clamp(1e-5, 1.0 - 1e-5)
-        cls_preds = torch.nn.functional.softmax(cls_preds, dim=-1)
-        # cls_preds = cls_preds.clamp(1e-5, 1.0 - 1e-5)
+        cls_preds = cls_preds.clamp(1e-5, 1.0 - 1e-5)
 
         target_assigns = self.anchor_assigner(labels, anchors)
         cls_losses, reg_losses = [], []
@@ -111,7 +139,8 @@ class Focal_Loss(nn.Module):
             fore_label_cls = assign['foreground'][1][..., 4:]
             fore_label_bbox = assign['foreground'][1][..., :4]
 
-            cls_losses.append(self.focal_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
+            cls_losses.append(self.focal_smax_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
+            # cls_losses.append(self.focal_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
             reg_losses.append(self.smooothL1_loss(reg_preds[i], anchors, fore_idx, fore_label_bbox, self.beta, self.fore_mean))
 
         cls_loss = sum(cls_losses)

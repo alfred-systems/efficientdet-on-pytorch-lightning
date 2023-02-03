@@ -20,6 +20,10 @@ class Hard_NMS:
         bbox_preds = preds[..., :4]
         cls_preds = preds[..., 4:]
         scores, obj_classes = torch.max(cls_preds, dim=2)
+        
+        redu_prob = cls_preds.sum(dim=-1)
+        softmax = torch.allclose(redu_prob, torch.ones_like(redu_prob))
+        num_class = cls_preds.shape[-1]
 
         if self.bbox_format != 'xyxy':
             bbox_preds = convert_bbox(bbox_preds, self.bbox_format, 'xyxy')
@@ -28,6 +32,12 @@ class Hard_NMS:
         out = []
 
         for pre_bbox, pre_score, pre_class in pre_out:
+            if softmax:
+                mask = pre_class < num_class - 1  # filter out background bbox
+                pre_bbox = pre_bbox[mask]
+                pre_score = pre_score[mask]
+                pre_class = pre_class[mask]
+            
             idx_selected = batched_nms(pre_bbox, pre_score, pre_class, self.iou_th)
             if self.max_det:
                 idx_selected = idx_selected[:self.max_det]

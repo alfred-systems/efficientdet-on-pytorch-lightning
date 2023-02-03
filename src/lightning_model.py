@@ -9,6 +9,7 @@ from src.dataset.metric import Evaluate_COCO
 from src.model.efficientdet import EfficientDet
 from src.loss.focal_loss import Focal_Loss
 from src.utils.nms.hard_nms import Hard_NMS
+from src.dataset.train_dataset import CLASS_NAME
 
 
 
@@ -159,7 +160,7 @@ class COCO_EfficientDet(pl.LightningModule):
         preds = self.nms(preds)
 
         # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
-        plot = batch_idx % self.plot_freq == 0
+        plot = batch_idx % self.plot_freq == 0 and hasattr(self.logger, 'log_image')
         batch_boxes = []
         for i, (scale, pad) in enumerate(zip(scales, pads)):
             preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
@@ -172,7 +173,7 @@ class COCO_EfficientDet(pl.LightningModule):
                     score = pred[4]
                     cls = int(pred[5])
                     
-                    if score < 0.5: continue
+                    if score < 0.2: continue
                     json_boxes.append({
                         "position" : {
                             "minX" : box[0],
@@ -180,13 +181,13 @@ class COCO_EfficientDet(pl.LightningModule):
                             "minY" : box[1],
                             "maxY" : box[3],
                         },
-                        "class_id" : cls,
+                        "class_id" : cls + 1,  # NOTE: detector don't have background class, so all class ids is shifted forward by 1
                         # optionally caption each box with its class and score
                         # "box_caption" : "%s (%.3f)" % (v_labels[b_i], v_scores[b_i]),
                         "domain" : "pixel",
                         "scores" : { "score" : int(100 * score) }
                     })
-                batch_boxes.append({"predictions": {"box_data": json_boxes}})
+                batch_boxes.append({"predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME}})
             
             preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
 
