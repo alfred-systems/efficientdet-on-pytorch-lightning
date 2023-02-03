@@ -87,6 +87,7 @@ class COCO_EfficientDet(pl.LightningModule):
 
         self.val_result_dir = None
         self.test_result_dir = None
+        self.plot_freq = 50
 
     def configure_model(self):
         model = EfficientDet(self.coeff, 80, False, self.pretrained_backbone)
@@ -120,7 +121,7 @@ class COCO_EfficientDet(pl.LightningModule):
                                       threshold=0.001, threshold_mode='abs', verbose=True)
 
         return {"optimizer": optimizer,
-                "lr_scheduler": {"scheduler": scheduler, "monitor": 'AP'}}
+                "lr_scheduler": {"scheduler": scheduler, "monitor": 'train_loss'}}
 
 
     @classmethod
@@ -152,23 +153,54 @@ class COCO_EfficientDet(pl.LightningModule):
 
         return loss
 
-
     def validation_step(self, batch, batch_idx):
-        ids, inputs, scales, pads = batch
+        ids, inputs, scales, pads = batch[:4]
         preds, _ = self.model(inputs, detect=True)
         preds = self.nms(preds)
 
         # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
-
+        plot = batch_idx % self.plot_freq == 0
+        batch_boxes = []
         for i, (scale, pad) in enumerate(zip(scales, pads)):
             preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
+            
+            if plot:
+                json_boxes = []
+                pred_pt = preds[i].cpu().numpy()
+                box_pt = pred_pt[..., :4].astype(np.int32).tolist()
+                for box, pred in zip(box_pt, pred_pt):
+                    score = pred[4]
+                    cls = int(pred[5])
+                    
+                    if score < 0.5: continue
+                    json_boxes.append({
+                        "position" : {
+                            "minX" : box[0],
+                            "maxX" : box[2],
+                            "minY" : box[1],
+                            "maxY" : box[3],
+                        },
+                        "class_id" : cls,
+                        # optionally caption each box with its class and score
+                        # "box_caption" : "%s (%.3f)" % (v_labels[b_i], v_scores[b_i]),
+                        "domain" : "pixel",
+                        "scores" : { "score" : int(100 * score) }
+                    })
+                batch_boxes.append({"predictions": {"box_data": json_boxes}})
+            
             preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
+
+        if plot:
+            extra = batch[4]
+            # images = [e['image_numpy'] for e in extra]
+            images = [img for img in extra['image_numpy'].cpu().numpy()]
+            self.logger.log_image(key="validation-step-detect", images=images, step=self.global_step, boxes=batch_boxes)
 
         return ids, preds
 
 
     def test_step(self, batch, batch_idx):
-        ids, inputs, scales, pads = batch
+        ids, inputs, scales, pads = batch[:4]
         preds, _ = self.model(inputs, detect=True)
         preds = self.nms(preds)
 

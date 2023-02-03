@@ -17,7 +17,8 @@ class Validate_Detection(Dataset):
         self.img_paths.sort()
 
         self.augmentor = Bbox_Augmentor(total_prob=1, min_area=0, min_visibility=0,
-                                        dataset_stat=dataset_stat, ToTensor=True, with_label=False)
+                                        dataset_stat=dataset_stat, ToTensor=True,
+                                        with_label=False, with_np_image=True,)
 
         self.augmentor.append(A.LongestMaxSize(img_size, p=1))
         self.augmentor.append(A.PadIfNeeded(img_size, img_size, border_mode=cv2.BORDER_CONSTANT, value=imagenet_fill(), p=1))
@@ -46,8 +47,9 @@ class Validate_Detection(Dataset):
         pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
         pad = torch.tensor(pad)
 
-        image = self.augmentor(image, None, None)['image']
+        data = self.augmentor(image, None, None)
+        image = data['image']
         # image = image.to(device=device)
 
-        return img_id, image, scale, pad
+        return img_id, image, scale, pad, data
 

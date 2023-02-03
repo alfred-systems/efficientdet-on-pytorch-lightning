@@ -28,7 +28,8 @@ class Bbox_Augmentor:
                  min_visibility: float = 0,
                  dataset_stat: Optional[Tuple] = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
                  ToTensor: bool = True,
-                 with_label: bool = True
+                 with_label: bool = True,
+                 with_np_image: bool = False,
                  ):
 
         self.transforms = []
@@ -42,6 +43,7 @@ class Bbox_Augmentor:
         self.dataset_stat = dataset_stat
         self.ToTensor = ToTensor
         self.with_label = with_label
+        self.with_np_image = with_np_image
 
         if dataset_stat:
             self.normalizer = A.Normalize(mean=dataset_stat[0], std=dataset_stat[1], max_pixel_value=255.0)
@@ -80,9 +82,13 @@ class Bbox_Augmentor:
         else:
             output = {'image': image, 'bboxes': bboxes, 'category_ids': category_ids}
 
+        if self.with_np_image:
+            # keep the un-modified image for inpsection
+            output['image_numpy'] = output['image'].copy()
+
         if self.dataset_stat:
             output['image'] = self.normalizer(image=output['image'])['image']
-
+        
         if self.ToTensor:
             output['image'] = np.transpose(output['image'], (2, 0, 1))
             output['image'] = torch.from_numpy(output['image'])
