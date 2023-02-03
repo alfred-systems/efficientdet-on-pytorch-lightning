@@ -41,17 +41,20 @@ def train(config_name=None, **kwargs):
                                 num_workers=cfg.num_workers, multiprocessing_context='spawn')
 
         # trainer
-        logger = Another_WandbLogger(**cfg.log)
-
         cfg_trainer = Config_Trainer(cfg.trainer)()
-        trainer = pl.Trainer(**cfg_trainer, logger=logger, num_sanity_val_steps=1, limit_train_batches=1.0)
 
-        logger.watch(pl_model)
+        if 'overfit_batches' not in cfg.trainer.Trainer:
+            logger = Another_WandbLogger(**cfg.log)
+            trainer = pl.Trainer(**cfg_trainer, logger=logger, num_sanity_val_steps=11, limit_train_batches=1.0)
 
-        # run training
-        if 'ckpt_path' in cfg:
-            trainer.fit(pl_model, train_loader, val_loader, ckpt_path=cfg.ckpt_path)
+            logger.watch(pl_model)
+            # run training
+            if 'ckpt_path' in cfg:
+                trainer.fit(pl_model, train_loader, val_loader, ckpt_path=cfg.ckpt_path)
+            else:
+                trainer.fit(pl_model, train_loader, val_loader)
         else:
+            trainer = pl.Trainer(**cfg_trainer, num_sanity_val_steps=1, check_val_every_n_epoch=10)
             trainer.fit(pl_model, train_loader, val_loader)
 
         wandb.finish()
