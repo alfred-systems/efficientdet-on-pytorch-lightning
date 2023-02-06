@@ -33,7 +33,7 @@ def train(config_name=None, **kwargs):
 
         # dataset and dataloader
         train_set = COCO_Detection(cfg.dataset.train.root, cfg.dataset.train.annFile, augmentor)
-        val_set = Validate_Detection(cfg.dataset.val.root, pl_model.model.img_size, cfg.dataset.dataset_stat)
+        val_set = Validate_Detection(cfg.dataset.val.root, cfg.dataset.val.annFile, pl_model.model.img_size, cfg.dataset.dataset_stat)
 
         train_loader = DataLoader(train_set, batch_size=cfg.batch_size, shuffle=True, drop_last=True,
                                 collate_fn=make_mini_batch, num_workers=cfg.num_workers, multiprocessing_context='spawn')
@@ -50,7 +50,7 @@ def train(config_name=None, **kwargs):
 
         if 'overfit_batches' not in cfg.trainer.Trainer:
             wb_logger = Another_WandbLogger(**cfg.log)
-            trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=11, limit_train_batches=1.0)
+            trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=21, limit_train_batches=1.0)
 
             wb_logger.watch(pl_model)
             # run training

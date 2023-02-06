@@ -12,6 +12,7 @@ trainer:
   Trainer:
     accumulate_grad_batches: 2
     strategy: ddp
+    sync_batchnorm: true
 
 model:
   model:

@@ -1,7 +1,9 @@
 import datetime
+from pprint import pprint
 from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 from src.__init__ import *
 from src.utils.bbox import convert_bbox, untransform_bbox
@@ -89,6 +91,7 @@ class COCO_EfficientDet(pl.LightningModule):
         self.val_result_dir = None
         self.test_result_dir = None
         self.plot_freq = 50
+        self.val_map = MeanAveragePrecision(box_format="xywh", class_metrics=False)
 
     def configure_model(self):
         model = EfficientDet(self.coeff, 80, False, self.pretrained_backbone)
@@ -161,12 +164,16 @@ class COCO_EfficientDet(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         ids, inputs, scales, pads = batch[:4]
+        extra = batch[4]
         preds, _ = self.model(inputs, detect=True)
         preds = self.nms(preds)
 
         # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
         plot = batch_idx % self.plot_freq == 0 and hasattr(self.logger, 'log_image')
         batch_boxes = []
+        metrix_pred = []
+        metrix_tar = []
+        
         for i, (scale, pad) in enumerate(zip(scales, pads)):
             preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
             
@@ -195,9 +202,29 @@ class COCO_EfficientDet(pl.LightningModule):
                 batch_boxes.append({"predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME}})
             
             preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
+            
+            pred_pt = preds[i].cpu()
+            boxes_pt = pred_pt[..., :4].to(torch.int32)
+            scores = pred_pt[:, 4]
+            clses = pred_pt[:, 5].to(torch.int32)
+            metrix_pred.append({
+                'boxes': boxes_pt,
+                'scores': scores,
+                'labels': clses,
+            })
+
+        for boxes, labels in zip(extra['boxes'], extra['labels']):
+            boxes = [box for box in boxes if box[0] >= 0]  # NOTE: we use [-1,-1,-1,-1] box for padding
+            labels = labels[labels >= 0].cpu()
+            boxes = torch.stack(boxes, dim=0).cpu()
+            metrix_tar.append({
+                'boxes': boxes,
+                'labels': labels,
+            })
+            
+        self.val_map.update(preds=metrix_pred, target=metrix_tar)
 
         if plot:
-            extra = batch[4]
             # images = [e['image_numpy'] for e in extra]
             images = [img for img in extra['image_numpy'].cpu().numpy()]
             self.logger.log_image(key="validation-step-detect", images=images, step=self.global_step, boxes=batch_boxes)
@@ -218,23 +245,28 @@ class COCO_EfficientDet(pl.LightningModule):
 
 
     def validation_epoch_end(self, val_step):
-        result = OrderedDict()
+        if getattr(self, 'val_map', None) is None:
+            result = OrderedDict()
 
-        for batch in val_step:
-            for id, pred in zip(*batch):
-                result[id] = pred
+            for batch in val_step:
+                for id, pred in zip(*batch):
+                    result[id] = pred
 
-        if not self.val_result_dir:
-            self.val_result_dir = os.path.join('result/val', datetime.datetime.now().strftime("run-%Y-%m-%d-%H-%M"))
-        result_file = os.path.join(self.val_result_dir, f'epoch-{self.global_rank}-{self.current_epoch}.json')
+            if not self.val_result_dir:
+                self.val_result_dir = os.path.join('result/val', datetime.datetime.now().strftime("run-%Y-%m-%d-%H-%M"))
+            result_file = os.path.join(self.val_result_dir, f'epoch-{self.global_rank}-{self.current_epoch}.json')
 
-        val_metric = Evaluate_COCO(result, result_file, self.annFile, test=False)
-        # logger.debug(f"validation_epoch_end NODE_RANK: {self.global_rank}")
+            val_metric = Evaluate_COCO(result, result_file, self.annFile, test=False)
+            # logger.debug(f"validation_epoch_end NODE_RANK: {self.global_rank}")
 
-        self.log('AP', val_metric['AP'])
-        self.log('AP50', val_metric['AP50'])
-        self.log('AR', val_metric['AR'])
-
+            self.log('AP', val_metric['AP'], sync_dist=True)
+            self.log('AP50', val_metric['AP50'], sync_dist=True)
+            self.log('AR', val_metric['AR'], sync_dist=True)
+        else:
+            for k, v in self.val_map.compute().items():
+                self.log(f'val_{k}', v, sync_dist=True)
+                logger.info(f'{k}: {v}')
+            self.val_map.reset()
 
     def test_epoch_end(self, test_step):
         result = OrderedDict()

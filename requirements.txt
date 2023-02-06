@@ -6,3 +6,4 @@ pycocotools
 timm
 loguru
 fire
+torchmetrics

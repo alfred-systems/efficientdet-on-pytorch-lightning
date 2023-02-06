@@ -8,7 +8,7 @@ Trainer:
 Callbacks:
   EarlyStopping:
     monitor: AP
-    patience: 20
+    patience: 100
     check_on_train_epoch_end: False
 
   LearningRateMonitor:

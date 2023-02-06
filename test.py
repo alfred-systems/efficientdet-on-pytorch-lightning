@@ -3,7 +3,8 @@ import sys
 import argparse
 
 sys.path.append(os.path.dirname(os.path.abspath('./src')))
-from src.__init__ import *
+# from src.__init__ import *
+from torch.utils.data import DataLoader
 
 # parser = argparse.ArgumentParser()
 # parser.add_argument("--config-name", dest='config_name', default=None, type=str)
@@ -37,23 +38,35 @@ from src.__init__ import *
 
 def dataset_sanity():
     import matplotlib.pyplot as plt
-    from src.dataset.val_dataset import COCO_Detection
-    from src.dataset.bbox_augmentor import debug_augmentor
-    augmentor = debug_augmentor(512)
-    dataset = COCO_Detection(
-        "/home/ron/Downloads/mscoco/train2017", 
-        "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_train2017.json",
-        augmentor)
+    # from src.dataset.val_dataset import COCO_Detection
+    from src.dataset.val_dataset import Validate_Detection
+    # from src.dataset.bbox_augmentor import debug_augmentor
+    # augmentor = debug_augmentor(512)
+    # dataset = COCO_Detection(
+    #     "/home/ron/Downloads/mscoco/train2017", 
+    #     "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_train2017.json",
+    #     augmentor)
+    dataset = Validate_Detection(
+        "/home/ron/Downloads/mscoco/val2017", 
+        "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_val2017.json",
+        512)
+    test_loader = DataLoader(dataset, batch_size=2)
 
+    for batch in test_loader:
+        image = batch[0]
+        extra = batch[-1]
+        print(extra)
+        break
+    
     for i in range(10):
-        image, label_pt = dataset[i]
-        boxes = label_pt[..., :4]
+        image = dataset[i][0]
+        extra = dataset[i][-1]
+        print(extra)
 
 
 def inferece():
     from src.lightning_model import COCO_EfficientDet
     from src.dataset.val_dataset import Validate_Detection
-    from torch.utils.data import DataLoader
 
     pl_model = COCO_EfficientDet.load_from_checkpoint("./log/COCO_EfficientDet/n7ulowov/checkpoints/epoch=1-step=7394.ckpt")
     print('model loaded')

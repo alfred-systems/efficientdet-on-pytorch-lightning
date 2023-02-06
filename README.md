@@ -1,10 +1,7 @@
 # Pipeline for Object Detection in PyTorch Lightning
 
-<p align="center">
-  <img src="https://github.com/hotcouscous1/Logo/blob/main/TensorBricks_Logo.png" width="500" height="120">
-</p>
-
 This is a [PyTorch Lightning](https://pytorch-lightning.readthedocs.io/en/stable/)-based pipeline for training EfficientDet on COCO 2017 dataset. For better efficiency, it logs with [Wandb](https://docs.wandb.ai/), configures training with yaml files and manages them with [Hydra](https://hydra.cc/docs/intro/), and defines augmentation with [Albumentations](https://albumentations.ai/docs/). But if you want to train a different model, you can easily create a new training by slight modifications to the template.  
+Lot of the code is probabily taken from [Yet-Another-EfficientDet-Pytorch](https://github.com/zylo117/Yet-Another-EfficientDet-Pytorch), you can go back and check the correctnest of the code if needed.
 
 ### Requirements
 

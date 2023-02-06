@@ -1,17 +1,21 @@
 from src.dataset.bbox_augmentor import *
 from src.dataset.utils import imagenet_fill
 from torch.utils.data import Dataset
-
+from pycocotools.coco import COCO
+from src.dataset.train_dataset import CLASS_TABLE
 
 
 class Validate_Detection(Dataset):
 
     def __init__(self,
                  root: str,
+                 annFile: str,
                  img_size: int,
                  dataset_stat: Tuple = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+                 max_det=100
                  ):
 
+        self.coco = COCO(annFile)
         self.root = root
         self.img_paths = os.listdir(self.root)
         self.img_paths.sort()
@@ -26,6 +30,7 @@ class Validate_Detection(Dataset):
 
         self.img_size = img_size
         self.dataset_stat = dataset_stat
+        self.max_det = max_det
 
 
     def __len__(self):
@@ -50,6 +55,21 @@ class Validate_Detection(Dataset):
         data = self.augmentor(image, None, None)
         image = data['image']
         # image = image.to(device=device)
+
+        coco = self.coco
+        target = coco.loadAnns(coco.getAnnIds(imgIds=int(img_id)))
+
+        bboxes, category_ids = [], []
+        for i, t in enumerate(target):
+            bbox = t['bbox']
+            if 0.0 in bbox[2:]:
+                bbox[2] += 1e-7
+                bbox[3] += 1e-7
+            
+            bboxes.append(bbox)
+            category_ids.append(CLASS_TABLE[t['category_id']])
+        data['boxes'] = torch.tensor(bboxes + [[-1] * 4] * (self.max_det - len(bboxes)))
+        data['labels'] = torch.tensor(category_ids + [-1] * (self.max_det - len(bboxes)), dtype=torch.int32)
 
         return img_id, image, scale, pad, data
 
