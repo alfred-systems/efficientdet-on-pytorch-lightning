@@ -117,8 +117,13 @@ class COCO_EfficientDet(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        optimizer = AdamW(self.model.parameters(), self.lr)
-        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3,
+        optimizer = AdamW([
+            {"params": self.model.backbone.parameters(), 'lr': self.lr / 4},
+            {"params": self.model.fpn.parameters(), 'lr': self.lr},
+            {"params": self.model.head.parameters(), 'lr': self.lr},
+        ], self.lr)
+        # optimizer = AdamW(self.model.backbone.parameters(), self.lr)
+        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5,
                                       threshold=0.001, threshold_mode='abs', verbose=True)
 
         return {"optimizer": optimizer,
@@ -177,9 +182,9 @@ class COCO_EfficientDet(pl.LightningModule):
                     json_boxes.append({
                         "position" : {
                             "minX" : box[0],
-                            "maxX" : box[2],
+                            "maxX" : box[0] + box[2],
                             "minY" : box[1],
-                            "maxY" : box[3],
+                            "maxY" : box[1] + box[3],
                         },
                         "class_id" : cls + 1,  # NOTE: detector don't have background class, so all class ids is shifted forward by 1
                         # optionally caption each box with its class and score

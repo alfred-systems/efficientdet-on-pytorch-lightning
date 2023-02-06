@@ -126,3 +126,25 @@ def default_augmentor(
 
     return aug
 
+
+def debug_augmentor(
+        img_size: Union[int, Tuple[int, int]]
+) -> Bbox_Augmentor:
+
+    if isinstance(img_size, tuple):
+        h, w = img_size
+    else:
+        h, w = img_size, img_size
+
+    aug = Bbox_Augmentor(1, 'coco', min_area=512, min_visibility=0.2, dataset_stat=None)
+
+    aug.append(A.HorizontalFlip(p=0.5))
+    aug.append(A.RandomResizedCrop(h, w, (0.8, 1.0), p=0.5))
+    aug.append(A.RandomScale((-0.2, 0), p=0.5))
+
+    aug.append(A.PadIfNeeded(h, w, border_mode=cv2.BORDER_CONSTANT, value=imagenet_fill(), p=0.5))
+    aug.append(A.Resize(h, w, p=1))
+    aug.make_compose()
+
+    return aug
+

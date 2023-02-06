@@ -43,11 +43,16 @@ def train(config_name=None, **kwargs):
         # trainer
         cfg_trainer = Config_Trainer(cfg.trainer)()
 
-        if 'overfit_batches' not in cfg.trainer.Trainer:
-            logger = Another_WandbLogger(**cfg.log)
-            trainer = pl.Trainer(**cfg_trainer, logger=logger, num_sanity_val_steps=11, limit_train_batches=1.0)
+        if 'load_ckpt_weight' in cfg:
+            logger.warning(f"load ckpt weight only: {cfg.load_ckpt_weight}")
+            ckpt = torch.load(cfg.load_ckpt_weight)
+            pl_model.load_state_dict(ckpt['state_dict'])
 
-            logger.watch(pl_model)
+        if 'overfit_batches' not in cfg.trainer.Trainer:
+            wb_logger = Another_WandbLogger(**cfg.log)
+            trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=11, limit_train_batches=1.0)
+
+            wb_logger.watch(pl_model)
             # run training
             if 'ckpt_path' in cfg:
                 trainer.fit(pl_model, train_loader, val_loader, ckpt_path=cfg.ckpt_path)
