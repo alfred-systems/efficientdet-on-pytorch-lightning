@@ -9,6 +9,9 @@ from loguru import logger
 sys.path.append(os.path.dirname(os.path.abspath('./src')))
 from src.__init__ import *
 
+import torch.multiprocessing
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 
 def train(config_name=None, **kwargs):
     
