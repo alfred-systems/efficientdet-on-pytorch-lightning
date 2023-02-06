@@ -69,7 +69,7 @@ class Validate_Detection(Dataset):
             bboxes.append(bbox)
             category_ids.append(CLASS_TABLE[t['category_id']])
         data['boxes'] = torch.tensor(bboxes + [[-1] * 4] * (self.max_det - len(bboxes)))
-        data['labels'] = torch.tensor(category_ids + [-1] * (self.max_det - len(bboxes)), dtype=torch.int32)
+        data['labels'] = torch.LongTensor(category_ids + [-1] * (self.max_det - len(bboxes)))
 
         return img_id, image, scale, pad, data
 

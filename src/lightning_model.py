@@ -216,7 +216,7 @@ class COCO_EfficientDet(pl.LightningModule):
         for boxes, labels in zip(extra['boxes'], extra['labels']):
             boxes = [box for box in boxes if box[0] >= 0]  # NOTE: we use [-1,-1,-1,-1] box for padding
             labels = labels[labels >= 0].cpu()
-            boxes = torch.stack(boxes, dim=0).cpu()
+            boxes = torch.stack(boxes, dim=0).cpu() if boxes else torch.zeros([0, 4])
             metrix_tar.append({
                 'boxes': boxes,
                 'labels': labels,
