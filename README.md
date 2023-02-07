@@ -1,7 +1,16 @@
 # Pipeline for Object Detection in PyTorch Lightning
 
 This is a [PyTorch Lightning](https://pytorch-lightning.readthedocs.io/en/stable/)-based pipeline for training EfficientDet on COCO 2017 dataset. For better efficiency, it logs with [Wandb](https://docs.wandb.ai/), configures training with yaml files and manages them with [Hydra](https://hydra.cc/docs/intro/), and defines augmentation with [Albumentations](https://albumentations.ai/docs/). But if you want to train a different model, you can easily create a new training by slight modifications to the template.  
-Lot of the code is probabily taken from [Yet-Another-EfficientDet-Pytorch](https://github.com/zylo117/Yet-Another-EfficientDet-Pytorch), you can go back and check the correctnest of the code if needed.
+
+**NOTE**: Lot of the code is probabily taken from [Yet-Another-EfficientDet-Pytorch](https://github.com/zylo117/Yet-Another-EfficientDet-Pytorch), you can go back and check the correctnest of the code if needed.
+
+### TODO
+
+- [X] Sanity check trianing a MS-COCO B0 detector and eval its performance
+- [ ] Replace the detector backbone with CLIP-like model, and train it on MS-COCO
+- [ ] Freeze CLIP-like backbone, and train it on MS-COCO
+- [ ] Add support for Visual-Gnome dataset and bounding box description
+- [ ] Replace classification head with embedding head for per anchor CLIP-like training target
 
 ### Requirements
 
@@ -13,25 +22,6 @@ hydra >= 1.2.0
 albumentations >= 1.2.1
 ```
 ***Warning*** : There is an issue that on pytorch 1.12, checkpoints from Adam and AdamW cannot be resumed for another training. 
-
-
-## Performance
-We run training on **GeForce RTX 2070 SUPER**.
-
-|model|mAP 0.5:0.95|paper|Params|FPS|checkpoint|
-|:-----:|:-----:|:-----:|:-----:|:-----:|:-----:|
-|D0|-|34.6|3.9M|-|-|
-|D1|-|40.5|6.6M|-|-|
-|D2|-|43.9|8.1M|-|-|
-|D3|-|47.2|12.0M|-|-|
-|D4|-|49.7|20.7M|-|-|
-|D5|-|51.5|33.6M|-|-|
-|D6|-|52.6|51.8M|-|-|
-|D7|-|53.7|51.8M|-|-|
-|D7X|-|55.1|77.1M|-|-|
-
-Training is running now! 🔥🔥🔥
-
 
 ## Updates
 - **[22.09.12]** Initial commit

@@ -3,9 +3,12 @@ defaults:
   - dataset: COCO2017
   - trainer: default
 
+trainer:
+  Trainer:
+    overfit_batches: 10
 
-batch_size: 16
-num_workers: 12
+batch_size: 8
+num_workers: 2
 ckpt_path: 
 
 
