@@ -7,7 +7,7 @@ Trainer:
 
 Callbacks:
   EarlyStopping:
-    monitor: AP
+    monitor: val_map
     patience: 100
     check_on_train_epoch_end: False
 
