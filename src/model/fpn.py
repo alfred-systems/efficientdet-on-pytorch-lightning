@@ -59,7 +59,6 @@ class FeatureFusion(nn.Module):
         self.nonlinear = nonlinear
         self.softmax = softmax
 
-
     def forward(self, features):
         weight = self.weight
         fusion = 0
@@ -84,7 +83,6 @@ class FeatureFusion(nn.Module):
 
         else:
             raise RuntimeError('select mode in sum, mul and concat')
-
 
         if self.normalize and not self.softmax:
             fusion /= (weight.sum() + 1e-4)
@@ -119,8 +117,6 @@ class Fusion(nn.Module):
 
     def forward(self, features):
         return self.fusion(features)
-
-
 
 
 class Resample_FPN(nn.Module):
@@ -167,7 +163,6 @@ class Resample_FPN(nn.Module):
 
         self.levels = nn.ModuleList(levels)
 
-
     def forward(self, features):
         p_features = []
 
@@ -205,33 +200,39 @@ class _BiFPN(nn.Module):
             if len(sizes) != num_levels or len(strides) != num_levels - 1:
                 raise ValueError('make len(sizes) == num_levels, and len(strides) == num_levels - 1')
 
-
         super().__init__()
 
         if self.first:
             self.resample = Resample_FPN(len(in_channels), num_levels, in_channels, out_channels, sizes, strides)
-
             self.branches = nn.ModuleList([Static_ConvLayer(c, out_channels, 1, bias=True, Act=None)
                                            for c in in_channels[1: len(in_channels)]])
 
         if sizes:
-            self.upsamples = nn.ModuleList([nn.Upsample(size=size, mode=up_mode) for size in sizes[:-1]])
+            self.upsamples = nn.ModuleList([
+                nn.Upsample(size=size, mode=up_mode) 
+                for size in sizes[:-1]
+            ])
         else:
-            self.upsamples = nn.ModuleList([nn.Upsample(scale_factor=2, mode=up_mode) for _ in range(num_levels - 1)])
-
+            self.upsamples = nn.ModuleList([
+                nn.Upsample(scale_factor=2, mode=up_mode)
+                for _ in range(num_levels - 1)
+            ])
 
         if sizes and strides:
-            self.downsamples = nn.ModuleList([Downsampler_Pool(sizes[i], sizes[i + 1], 'maxpool', 3, strides[i])
-                                             for i in range(num_levels - 1)])
+            self.downsamples = nn.ModuleList([
+                Downsampler_Pool(sizes[i], sizes[i + 1], 'maxpool', 3, strides[i])
+                for i in range(num_levels - 1)
+            ])
         else:
-            self.downsamples = nn.ModuleList([nn.MaxPool2d(3, 2, 1) for _ in range(num_levels - 1)])
-
+            self.downsamples = nn.ModuleList([
+                nn.MaxPool2d(3, 2, 1) 
+                for _ in range(num_levels - 1)
+            ])
 
         self.td_fuses = nn.ModuleList([self.fuse(2, fusion, out_channels, Act) for _ in range(num_levels - 1)])
 
         self.bu_fuses = nn.ModuleList([self.fuse(3, fusion, out_channels, Act) for _ in range(num_levels - 2)])
         self.bu_fuses.append(self.fuse(2, fusion, out_channels, Act))
-
 
     @staticmethod
     def fuse(num, mode, channels, Act):
@@ -241,8 +242,6 @@ class _BiFPN(nn.Module):
                  nn.BatchNorm2d(channels)]
 
         return nn.Sequential(*layer)
-
-
 
     def forward(self, features):
         td_features, bu_features = [], []
@@ -258,7 +257,6 @@ class _BiFPN(nn.Module):
             features = self.resample(features)
             branches = branches + features[len(branches) + 1: -1]
 
-
         # top-down path
         for i in range(self.num_levels - 1, -1, -1):
             if i == len(features) - 1:
@@ -271,7 +269,6 @@ class _BiFPN(nn.Module):
                 td_features.append(p)
 
         td_features = td_features[::-1]
-
 
         # bottom-up path
         for i in range(self.num_levels):

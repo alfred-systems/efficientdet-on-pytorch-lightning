@@ -53,7 +53,7 @@ def train(config_name=None, **kwargs):
 
         if 'overfit_batches' not in cfg.trainer.Trainer:
             wb_logger = Another_WandbLogger(**cfg.log)
-            trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=100, limit_train_batches=1.0)
+            trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=32, limit_train_batches=1.0)
 
             wb_logger.watch(pl_model)
             # run training

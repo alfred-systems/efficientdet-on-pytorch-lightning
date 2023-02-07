@@ -8,7 +8,7 @@ from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from src.__init__ import *
 from src.utils.bbox import convert_bbox, untransform_bbox
 from src.dataset.metric import Evaluate_COCO
-from src.model.efficientdet import EfficientDet
+from src.model.efficientdet import EfficientDet, ConvNeXtDet
 from src.loss.focal_loss import Focal_Loss
 from src.utils.nms.hard_nms import Hard_NMS
 from src.dataset.train_dataset import CLASS_NAME
@@ -94,9 +94,11 @@ class COCO_EfficientDet(pl.LightningModule):
         self.val_map = MeanAveragePrecision(box_format="xywh", class_metrics=False)
 
     def configure_model(self):
-        model = EfficientDet(self.coeff, 80, False, self.pretrained_backbone)
+        # model = EfficientDet(self.coeff, 80, False, self.pretrained_backbone)
+        model = ConvNeXtDet(self.coeff, 80, False, self.pretrained_backbone)
 
         if not self.pretrained_backbone:
+            raise RuntimeError('not suposse to use this option')
             self.initialize_weight(model)
         else:
             self.initialize_weight(model.fpn)
@@ -166,6 +168,7 @@ class COCO_EfficientDet(pl.LightningModule):
         ids, inputs, scales, pads = batch[:4]
         extra = batch[4]
         preds, _ = self.model(inputs, detect=True)
+        device = preds.device
         preds = self.nms(preds)
 
         # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
@@ -203,7 +206,7 @@ class COCO_EfficientDet(pl.LightningModule):
             
             preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
             
-            pred_pt = preds[i].cpu()
+            pred_pt = preds[i]
             boxes_pt = pred_pt[..., :4].to(torch.int32)
             scores = pred_pt[:, 4]
             clses = pred_pt[:, 5].to(torch.int32)
@@ -215,8 +218,8 @@ class COCO_EfficientDet(pl.LightningModule):
 
         for boxes, labels in zip(extra['boxes'], extra['labels']):
             boxes = [box for box in boxes if box[0] >= 0]  # NOTE: we use [-1,-1,-1,-1] box for padding
-            labels = labels[labels >= 0].cpu()
-            boxes = torch.stack(boxes, dim=0).cpu() if boxes else torch.zeros([0, 4])
+            labels = labels[labels >= 0]
+            boxes = torch.stack(boxes, dim=0) if boxes else torch.zeros([0, 4]).to(device)
             metrix_tar.append({
                 'boxes': boxes,
                 'labels': labels,

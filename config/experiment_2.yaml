@@ -1,0 +1,47 @@
+defaults:
+  - _self_
+  - dataset: COCO2017
+  - trainer: default
+
+
+batch_size: 16
+num_workers: 4
+ckpt_path: 
+
+trainer:
+  Trainer:
+    accumulate_grad_batches: 2
+    strategy: ddp
+    sync_batchnorm: true
+
+model:
+  model:
+    coeff: 0
+
+  loss:
+    fore_th: 0.5
+    back_th: 0.4
+    alpha: 0.25
+    gamma: 1.5
+    beta: 0.1
+    fore_mean: True
+    reg_weight:
+    average: True
+
+  nms:
+    iou_th: 0.5
+    max_det: 400
+
+  optimizer:
+    lr: 0.0002
+
+
+log:
+  name: exp2-run0
+  project: COCO_EfficientDet
+  save_dir: ./log
+  artifact_type: find_lr
+  artifact_name: experiment_2
+  artifact_description: lr=0.0001 | scheduler=ReduceLROnPlateau | monitor=AP | ConvNeXt-Laion2B
+  artifact_save_files:
+    trainer: config/trainer/default.yaml
