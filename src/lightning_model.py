@@ -128,7 +128,7 @@ class COCO_EfficientDet(pl.LightningModule):
             {"params": self.model.head.parameters(), 'lr': self.lr},
         ], self.lr)
         # optimizer = AdamW(self.model.backbone.parameters(), self.lr)
-        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5,
+        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5,
                                       threshold=0.001, threshold_mode='abs', verbose=True)
 
         return {"optimizer": optimizer,
