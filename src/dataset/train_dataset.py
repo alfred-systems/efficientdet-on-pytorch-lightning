@@ -1,7 +1,11 @@
+import os
+import json
+
 from src.dataset.utils import *
 from src.dataset.bbox_augmentor import Bbox_Augmentor
 from pycocotools.coco import COCO
 from torchvision.datasets.vision import VisionDataset
+
 
 CLASS_TABLE = {
     1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 7, 9: 8, 10: 9, 
@@ -177,3 +181,60 @@ class COCO_Detection(VisionDataset):
             label = torch.zeros((0, self.num_classes + 4), dtype=torch.int8)
 
         return image, label
+
+
+class VisualGenome(VisionDataset):
+    MODEL = "convnext_base.clip_laion2b"
+
+    def __init__(self, img_dir: str, 
+                 region_anno_path: str, 
+                 bbox_augmentor: Optional[Bbox_Augmentor]):
+        self.img_dir = img_dir
+        with open(region_anno_path, mode='r') as f:
+            self.region_anno = json.load(f)
+        self.augmentor = bbox_augmentor
+    
+    def create_region_embed(self, cache_file: str):
+        import open_clip
+        
+        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms('hf-hub:laion/CLIP-convnext_base_w-laion2B-s13B-b82K')
+        tokenizer = open_clip.get_tokenizer('hf-hub:laion/CLIP-convnext_base_w-laion2B-s13B-b82K')
+        model = model.to('cuda')
+
+        raise NotImplementedError("this is a in-completed implementation, dont use it yet")
+        
+        embed_table = {}
+        for i in range(len(self)):
+            reg_id = self.region_anno[i]['region_id']
+            phrase = self.region_anno[i]['phrase']
+            input_ids = tokenizer(phrase)
+            embed = model.encode_text(input_ids)
+            assert embed.ndim == 2 and embed.size(0) == 1
+            embed_table[reg_id] = embed.cpu()[0]
+        
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        torch.save(embed_table)
+    
+    def __len__(self):
+        return len(self.region_anno)
+    
+    def __getitem__(self, index: int):
+        meta = self.region_anno[index]
+        img_id: int = meta['image_id']
+        image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
+        
+        if self.augmentor:
+            transform = self.augmentor(image, bboxes, category_ids)
+            image, bboxes, category_ids = transform.values()
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = np.transpose(image, (2, 0, 1))
+            image = torch.from_numpy(image)
+        
+        for region in meta['regions']:
+            x: int = region['x']
+            y: int = region['y']
+            w: int = region['width']
+            h: int = region['height']
+            phrase: str = region['phrase']
+            reg_id: int = region['region_id']

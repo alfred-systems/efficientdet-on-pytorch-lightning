@@ -226,6 +226,13 @@ class ConvNeXtDet(RetinaNet_Frame):
 
         super().__init__(self.img_size)
 
+        """
+        'convnext_base.clip_laion2b': _cfg(
+            hf_hub_id='laion/CLIP-convnext_base_w-laion2B-s13B-b82K',
+            hf_hub_filename='open_clip_pytorch_model.bin',
+            mean=OPENAI_CLIP_MEAN, std=OPENAI_CLIP_STD,
+            input_size=(3, 256, 256), pool_size=(8, 8), crop_pct=1.0, num_classes=640),
+        """
         self.backbone = timm.create_model(f"convnext_base.clip_laion2b", pretrained=True, features_only=True)
         self.backbone = FeaturePicker(self.backbone, [1, 2, 3])
 
