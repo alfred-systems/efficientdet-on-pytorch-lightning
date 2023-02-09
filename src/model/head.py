@@ -11,8 +11,10 @@ class Classifier(nn.Module):
                  num_classes: int,
                  Act: nn.Module = nn.SiLU(),
                  background_class: bool = True,
+                 output_prob: bool = True,
                  ):
         num_classes += int(background_class)
+        self.output_prob = output_prob
         self.num_levels, self.num_anchors, self.num_classes \
             = num_levels, num_anchors, num_classes
 
@@ -49,9 +51,9 @@ class Classifier(nn.Module):
             pred = pred.permute(0, 2, 3, 1)
             pred = pred.contiguous().view(pred.shape[0], pred.shape[1], pred.shape[2], self.num_anchors, self.num_classes)
             pred = pred.contiguous().view(pred.shape[0], -1, self.num_classes)
-            pred = torch.nn.functional.softmax(pred, dim=-1)
-            # pred = torch.nn.functional.sigmoid(pred)
-
+            if self.output_prob:
+                pred = torch.nn.functional.softmax(pred, dim=-1)
+                # pred = torch.nn.functional.sigmoid(pred)
             out.append(pred)
         out = torch.cat(out, dim=1)
 
@@ -125,4 +127,34 @@ class EfficientDet_Head(nn.Module):
         reg_out = self.regressor(features)
         cls_out = self.classifier(features)
         out = torch.cat((reg_out, cls_out), dim=2)
+        return out
+
+class ClipDet_Head(nn.Module):
+    """
+    overhere encoder will output a embeding of size "embed_size" per anchor box,
+    instead of a classification prob distribution.
+    and classifier are only for distigish object and background.
+    """
+    def __init__(self,
+                 num_levels: int,
+                 depth: int,
+                 width: int,
+                 num_anchors: int,
+                 embed_size: int,
+                 Act: nn.Module = nn.SiLU()
+                 ):
+        super().__init__()
+
+        self.classifier = Classifier(num_levels, depth, width, num_anchors, 2, Act)
+        self.encoder = Classifier(
+            num_levels, depth, width, num_anchors, embed_size, Act, 
+            output_prob=False, background_class=False)
+        self.regressor = Regressor(num_levels, depth, width, num_anchors, Act)
+
+
+    def forward(self, features):
+        reg_out = self.regressor(features)
+        emb_out = self.encoder(features)
+        cls_out = self.classifier(features)
+        out = torch.cat((reg_out, cls_out, emb_out), dim=2)
         return out

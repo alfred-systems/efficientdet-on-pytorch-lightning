@@ -2,7 +2,7 @@ import timm
 from src.model.utils import *
 from src.model.backbone import EfficientNet_Backbone, FeatureExtractor, FeaturePicker
 from src.model.fpn import BiFPN
-from src.model.head import EfficientDet_Head
+from src.model.head import EfficientDet_Head, ClipDet_Head
 from src.model.anchor import Anchor_Maker
 
 
@@ -242,6 +242,53 @@ class ConvNeXtDet(RetinaNet_Frame):
         self.fpn = BiFPN(num_levels, d_bifpn, channels, w_bifpn, Act=nn.ReLU())
 
         self.head = EfficientDet_Head(num_levels, d_head, w_head, self.num_anchors, num_classes, nn.ReLU())
+
+
+class ClipDet(RetinaNet_Frame):
+
+    resolutions = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
+    survival_probs = [None, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8]
+
+    config = {'bifpn_depth': [3, 4, 5, 6, 7, 7, 8, 8, 8],
+              'bifpn_width': [256, 256, 112, 160, 224, 288, 384, 384, 384],
+              'head_depth':  [2, 3, 3, 4, 4, 4, 5, 5, 5],
+              'head_width':  [256, 256, 112, 160, 224, 288, 384, 384, 384]}
+
+    anchor_sizes = [32, 64, 128, 256, 512]
+    anchor_scales = [1, 2 ** (1 / 3), 2 ** (2 / 3)]
+    anchor_ratios = [[1, 1], [1.4, 0.7], [0.7, 1.4]]
+
+    strides = [8, 16, 32, 64, 128]
+
+    def __init__(self,
+                 coeff: int):
+        coeff = 0
+        self.img_size = self.resolutions[coeff]
+
+        num_levels = len(self.strides)
+
+        d_bifpn = self.config['bifpn_depth'][coeff]
+        w_bifpn = self.config['bifpn_width'][coeff]
+        d_head = self.config['head_depth'][coeff]
+        w_head = self.config['head_width'][coeff]
+
+        super().__init__(self.img_size)
+
+        """
+        'convnext_base.clip_laion2b': _cfg(
+            hf_hub_id='laion/CLIP-convnext_base_w-laion2B-s13B-b82K',
+            hf_hub_filename='open_clip_pytorch_model.bin',
+            mean=OPENAI_CLIP_MEAN, std=OPENAI_CLIP_STD,
+            input_size=(3, 256, 256), pool_size=(8, 8), crop_pct=1.0, num_classes=640),
+        """
+        self.backbone = timm.create_model(f"convnext_base.clip_laion2b", pretrained=True, features_only=True)
+        self.backbone = FeaturePicker(self.backbone, [1, 2, 3])
+
+        widths = [128, 256, 512, 1024]
+        channels = widths[1:]
+
+        self.fpn = BiFPN(num_levels, d_bifpn, channels, w_bifpn, Act=nn.ReLU())
+        self.head = ClipDet_Head(num_levels, d_head, w_head, self.num_anchors, 640, nn.ReLU())
 
 
 

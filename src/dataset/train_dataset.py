@@ -197,8 +197,8 @@ class VisualGenome(VisionDataset):
     def create_region_embed(self, cache_file: str):
         import open_clip
         
-        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms('hf-hub:laion/CLIP-convnext_base_w-laion2B-s13B-b82K')
-        tokenizer = open_clip.get_tokenizer('hf-hub:laion/CLIP-convnext_base_w-laion2B-s13B-b82K')
+        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms('convnext_base_w', pretrained='laion2B-s13B-b82K')
+        tokenizer = open_clip.get_tokenizer('convnext_base_w')
         model = model.to('cuda')
 
         raise NotImplementedError("this is a in-completed implementation, dont use it yet")

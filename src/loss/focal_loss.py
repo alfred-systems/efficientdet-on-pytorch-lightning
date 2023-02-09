@@ -2,7 +2,7 @@ from src.__init__ import *
 from src.model.anchor import Anchor_Assigner
 
 
-class Focal_Loss(nn.Module):
+class FocalL1_Loss(nn.Module):
 
     def __init__(self,
                  fore_th: float,
@@ -155,3 +155,85 @@ class Focal_Loss(nn.Module):
 
         return total_loss, cls_loss, reg_loss
 
+
+class ContrastiveL1_Loss(FocalL1_Loss):
+    """
+    CLIP Contrastive loss for training classification head embedding,
+    L1 loss for boudning box regression.
+    """
+    def __init__(self,
+                 fore_th: float,
+                 back_th: float,
+                 alpha: float = 0.25,
+                 gamma: float = 1.5,
+                 beta: float = 0.1,
+                 fore_mean: bool = True,
+                 reg_weight: Optional[float] = None,
+                 average: bool = True,
+                 bbox_format: str = 'cxcywh'
+                 ):
+
+        super().__init__()
+
+        self.fore_th = fore_th
+        self.back_th = back_th
+        self.anchor_assigner = Anchor_Assigner(fore_th, back_th, False, False, bbox_format, label_type='embed')
+
+        self.alpha = alpha
+        self.gamma = gamma
+        self.beta = beta
+        self.fore_mean = fore_mean
+
+        self.reg_weight = reg_weight if reg_weight else 1.0
+        self.average = average
+    
+    @staticmethod
+    def contrastive_loss(cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
+        raise NotImplementedError()
+
+    def forward(self,
+                preds: Tensor,
+                anchors: Tensor,
+                labels: Tensor
+                ) -> Tuple[Tensor, Tensor, Tensor]:
+
+        if len(preds.shape) != 3:
+            raise ValueError("preds should be given in 3d tensor")
+
+        if len(anchors.shape) != 3:
+            raise ValueError("anchors should be given in 3d tensor")
+
+        if len(labels.shape) != 3:
+            raise ValueError("labels should be given in 3d tensor")
+
+        reg_preds = preds[..., :4]
+        cls_preds = preds[..., 4:]
+        cls_preds = cls_preds.clamp(1e-5, 1.0 - 1e-5)
+
+        target_assigns = self.anchor_assigner(labels, anchors)
+        cls_losses = []
+        reg_losses = []
+        emb_losses = []
+
+        for i, assign in enumerate(target_assigns):
+            fore_idx = assign['foreground'][0]
+            back_idx = assign['background'][0]
+
+            fore_label_cls = assign['foreground'][1][..., 4:]
+            fore_label_bbox = assign['foreground'][1][..., :4]
+
+            cls_losses.append(self.focal_smax_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
+            emb_losses.append(self.contrastive_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
+            reg_losses.append(self.smooothL1_loss(reg_preds[i], anchors, fore_idx, fore_label_bbox, self.beta, self.fore_mean))
+
+        cls_loss = sum(cls_losses)
+        reg_loss = sum(reg_losses)
+        total_loss = cls_loss + self.reg_weight * reg_loss
+
+        if self.average:
+            batch = len(target_assigns)
+            total_loss /= batch
+            cls_loss /= batch
+            reg_loss /= batch
+
+        return total_loss, cls_loss, reg_loss

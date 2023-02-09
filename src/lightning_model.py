@@ -8,8 +8,8 @@ from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from src.__init__ import *
 from src.utils.bbox import convert_bbox, untransform_bbox
 from src.dataset.metric import Evaluate_COCO
-from src.model.efficientdet import EfficientDet, ConvNeXtDet
-from src.loss.focal_loss import Focal_Loss
+from src.model.efficientdet import EfficientDet, ConvNeXtDet, ClipDet
+from src.loss.focal_loss import FocalL1_Loss, ContrastiveL1_Loss
 from src.utils.nms.hard_nms import Hard_NMS
 from src.dataset.train_dataset import CLASS_NAME
 
@@ -91,6 +91,7 @@ class COCO_EfficientDet(pl.LightningModule):
         self.val_result_dir = None
         self.test_result_dir = None
         self.plot_freq = 50
+        # TODO: https://github.com/Lightning-AI/metrics/issues/1024
         self.val_map = MeanAveragePrecision(box_format="xywh", class_metrics=False)
 
     def configure_model(self):
@@ -114,7 +115,7 @@ class COCO_EfficientDet(pl.LightningModule):
 
 
     def configure_loss_function(self):
-        return Focal_Loss(self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
+        return FocalL1_Loss(self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
                           self.fore_mean, self.reg_weight, self.average, 'cxcywh')
 
     def configure_nms(self):
@@ -145,7 +146,7 @@ class COCO_EfficientDet(pl.LightningModule):
                     nn.init.constant_(module.bias, 0)
 
 
-    def forward(self, input, detect):
+    def forward(self, input: torch.Tensor, detect: bool):
         return self.model(input, detect)
 
 
@@ -284,3 +285,31 @@ class COCO_EfficientDet(pl.LightningModule):
 
         Evaluate_COCO(result, result_file, None, test=True)
 
+
+
+class VisGenome_EfficientDet(COCO_EfficientDet):
+
+    def configure_model(self):
+        model = ClipDet(self.coeff)
+
+        if not self.pretrained_backbone:
+            raise RuntimeError('not suposse to use this option')
+            self.initialize_weight(model)
+        else:
+            self.initialize_weight(model.fpn)
+            self.initialize_weight(model.head)
+
+        if self.ckpt_path:
+            ckpt = torch.load(self.ckpt_path)
+            assert isinstance(ckpt, OrderedDict), 'please load EfficientDet checkpoints'
+            assert next(iter(ckpt)).split('.')[0] != 'model', 'please load EfficientDet checkpoints'
+            model.load_state_dict(torch.load(self.ckpt_path))
+
+        return model
+
+    def configure_loss_function(self):
+        return ContrastiveL1_Loss(
+            self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
+            self.fore_mean, self.reg_weight, self.average, 'cxcywh')
+    
+    

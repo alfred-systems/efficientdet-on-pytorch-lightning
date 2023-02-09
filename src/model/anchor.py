@@ -74,7 +74,8 @@ class Anchor_Assigner(nn.Module):
                  back_th: float = None,
                  max_for_target: bool = False,
                  foreground_only: bool = True,
-                 bbox_format: str = 'cxcywh'
+                 bbox_format: str = 'cxcywh',
+                 label_type: str = 'class',
                  ):
 
         super().__init__()
@@ -84,7 +85,7 @@ class Anchor_Assigner(nn.Module):
         self.max_for_target = max_for_target
         self.foreground_only = foreground_only
         self.bbox_format = bbox_format
-
+        self.label_type = label_type
 
     def forward(self, labels: Tensor, anchors: Tensor) -> List[dict]:
         ious = batch_iou(anchors, labels[..., :4], self.bbox_format)
@@ -117,10 +118,15 @@ class Anchor_Assigner(nn.Module):
 
             assigned_target = label[target_for_anchor]
 
-            if self.foreground_only:
-                batch_assign.append({'foreground': [fore_mask.nonzero(as_tuple=True)[0], assigned_target[fore_mask]]})
+            if self.label_type == 'class':
+                if self.foreground_only:
+                    batch_assign.append({'foreground': [fore_mask.nonzero(as_tuple=True)[0], assigned_target[fore_mask]]})
+                else:
+                    batch_assign.append({'foreground': [fore_mask.nonzero(as_tuple=True)[0], assigned_target[fore_mask]],
+                                        'background': [back_mask.nonzero(as_tuple=True)[0], assigned_target[back_mask]]})
+            elif self.label_type == 'embed':
+                pass
             else:
-                batch_assign.append({'foreground': [fore_mask.nonzero(as_tuple=True)[0], assigned_target[fore_mask]],
-                                     'background': [back_mask.nonzero(as_tuple=True)[0], assigned_target[back_mask]]})
+                raise ValueError(f"Unknow loss function label type: {self.label_type}")
 
         return batch_assign

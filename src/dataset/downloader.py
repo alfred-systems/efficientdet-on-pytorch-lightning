@@ -16,6 +16,8 @@ def download_urls(urls, output_dir):
     sucess_list = []
     for i, id, url in urls:
         output_path = os.path.join(output_dir, f'{i}.jpg')
+        if os.path.exists(output_path):
+            continue
         for _ in range(3):
             try:
                 r = rq.get(url, stream=True)
