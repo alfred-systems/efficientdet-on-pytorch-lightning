@@ -7,10 +7,13 @@ This is a [PyTorch Lightning](https://pytorch-lightning.readthedocs.io/en/stable
 ### TODO
 
 - [X] Sanity check trianing a MS-COCO B0 detector and eval its performance
-- [ ] Replace the detector backbone with CLIP-like model, and train it on MS-COCO
-- [ ] Freeze CLIP-like backbone, and train it on MS-COCO
-- [ ] Add support for Visual-Gnome dataset and bounding box description
+- [X] Replace the detector backbone with CLIP-like model, and train it on MS-COCO
+- [ ] (WIP) Freeze CLIP-like backbone, and train it on MS-COCO
+- [ ] (WIP) Add support for Visual-Gnome dataset and bounding box description
 - [ ] Replace classification head with embedding head for per anchor CLIP-like training target
+- [ ] Testing model variation with both classification(background/non-background) head with CLIP embedding head
+- [ ] Maybe give two stage detector a try(just like what [Findit](https://sites.google.com/view/findit-eccv22/home?authuser=0&pli=1) does)
+
 
 ### Requirements
 
