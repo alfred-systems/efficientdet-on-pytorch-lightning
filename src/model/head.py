@@ -13,15 +13,17 @@ class Classifier(nn.Module):
                  background_class: bool = True,
                  output_prob: bool = True,
                  ):
+        self.use_background_class = background_class
         num_classes += int(background_class)
         self.output_prob = output_prob
+        
         self.num_levels, self.num_anchors, self.num_classes \
             = num_levels, num_anchors, num_classes
 
         super().__init__()
 
         self.conv_layers = nn.ModuleList([
-            nn.Conv2d(width, width, kernel_size=3, stride=1, padding=1, bias=True)
+            nn.Conv2d(width, width, kernel_size=3, stride=1, padding=1, bias=False)
             # Seperable_Conv2d(width, width, 3, 1, bias=True)
             for _ in range(depth)
         ])
@@ -32,7 +34,7 @@ class Classifier(nn.Module):
         ])
         self.act = Act
 
-        self.conv_pred = nn.Conv2d(width, num_anchors * num_classes, kernel_size=3, stride=1, padding=1, bias=True)
+        self.conv_pred = nn.Conv2d(width, num_anchors * num_classes, kernel_size=3, stride=1, padding=1, bias=False)
         # self.conv_pred = Seperable_Conv2d(width, num_anchors * num_classes, bias=True)
 
 
@@ -52,8 +54,10 @@ class Classifier(nn.Module):
             pred = pred.contiguous().view(pred.shape[0], pred.shape[1], pred.shape[2], self.num_anchors, self.num_classes)
             pred = pred.contiguous().view(pred.shape[0], -1, self.num_classes)
             if self.output_prob:
-                pred = torch.nn.functional.softmax(pred, dim=-1)
-                # pred = torch.nn.functional.sigmoid(pred)
+                if self.use_background_class:
+                    pred = torch.nn.functional.softmax(pred, dim=-1)
+                else:
+                    pred = torch.nn.functional.sigmoid(pred)
             out.append(pred)
         out = torch.cat(out, dim=1)
 
@@ -114,12 +118,13 @@ class EfficientDet_Head(nn.Module):
                  width: int,
                  num_anchors: int,
                  num_classes: int,
-                 Act: nn.Module = nn.SiLU()
+                 Act: nn.Module = nn.SiLU(),
+                 background_class: bool = True,
                  ):
 
         super().__init__()
 
-        self.classifier = Classifier(num_levels, depth, width, num_anchors, num_classes, Act)
+        self.classifier = Classifier(num_levels, depth, width, num_anchors, num_classes, Act, background_class=background_class)
         self.regressor = Regressor(num_levels, depth, width, num_anchors, Act)
 
 
@@ -141,11 +146,14 @@ class ClipDet_Head(nn.Module):
                  width: int,
                  num_anchors: int,
                  embed_size: int,
-                 Act: nn.Module = nn.SiLU()
+                 Act: nn.Module = nn.SiLU(),
+                 background_class: bool = True,
                  ):
         super().__init__()
 
-        self.classifier = Classifier(num_levels, depth, width, num_anchors, 2, Act)
+        self.classifier = Classifier(
+            num_levels, depth, width, num_anchors, 2, 
+            Act, background_class=background_class)
         self.encoder = Classifier(
             num_levels, depth, width, num_anchors, embed_size, Act, 
             output_prob=False, background_class=False)

@@ -62,6 +62,7 @@ class COCO_EfficientDet(pl.LightningModule):
                  max_det: Optional[int] = 400,
                  lr: float = 1e-4,
                  val_annFile: str = None,
+                 background_class: bool = True,
                  ):
 
         super().__init__()
@@ -82,6 +83,7 @@ class COCO_EfficientDet(pl.LightningModule):
         self.max_det = max_det
         self.lr = lr
         self.annFile = val_annFile
+        self.background_class = background_class
 
         self.model = self.configure_model()
         self.anchors = self.model.anchors
@@ -95,15 +97,15 @@ class COCO_EfficientDet(pl.LightningModule):
         self.val_map = MeanAveragePrecision(box_format="xywh", class_metrics=False)
 
     def configure_model(self):
-        # model = EfficientDet(self.coeff, 80, False, self.pretrained_backbone)
-        model = ConvNeXtDet(self.coeff, 80, False, self.pretrained_backbone)
+        model = EfficientDet(self.coeff, 80, background_class=self.background_class)
+        # model = ConvNeXtDet(self.coeff, 80, self.pretrained_backbone)
 
-        if not self.pretrained_backbone:
-            raise RuntimeError('not suposse to use this option')
-            self.initialize_weight(model)
-        else:
-            self.initialize_weight(model.fpn)
-            self.initialize_weight(model.head)
+        # if not self.pretrained_backbone:
+        #     raise RuntimeError('not suposse to use this option')
+        #     self.initialize_weight(model)
+        # else:
+        #     self.initialize_weight(model.fpn)
+        #     self.initialize_weight(model.head)
 
         if self.ckpt_path:
             ckpt = torch.load(self.ckpt_path)
@@ -249,7 +251,7 @@ class COCO_EfficientDet(pl.LightningModule):
 
 
     def validation_epoch_end(self, val_step):
-        if getattr(self, 'val_map', None) is None:
+        if getattr(self, 'val_map', None) is None or self.trainer.world_size == 1:
             result = OrderedDict()
 
             for batch in val_step:

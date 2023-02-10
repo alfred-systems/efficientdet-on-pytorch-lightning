@@ -27,15 +27,15 @@ def train(config_name=None, **kwargs):
         from src.utils.config_trainer import Config_Trainer
         from src.utils.wandb_logger import Another_WandbLogger
 
-
+        use_background_class = True
         # lightning model
         pl_model = COCO_EfficientDet(**cfg.model.model, **cfg.model.loss, **cfg.model.nms, **cfg.model.optimizer,
-                                    val_annFile=cfg.dataset.val.annFile)
+                                    val_annFile=cfg.dataset.val.annFile, background_class=use_background_class)
         # augmentor
         augmentor = default_augmentor(pl_model.model.img_size)
 
         # dataset and dataloader
-        train_set = COCO_Detection(cfg.dataset.train.root, cfg.dataset.train.annFile, augmentor)
+        train_set = COCO_Detection(cfg.dataset.train.root, cfg.dataset.train.annFile, augmentor, background_class=use_background_class)
         val_set = Validate_Detection(cfg.dataset.val.root, cfg.dataset.val.annFile, pl_model.model.img_size, cfg.dataset.dataset_stat)
 
         train_loader = DataLoader(train_set, batch_size=cfg.batch_size, shuffle=True, drop_last=True,

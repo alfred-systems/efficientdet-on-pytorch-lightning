@@ -1,5 +1,44 @@
 from src.__init__ import *
 from src.model.anchor import Anchor_Assigner
+from loguru import logger
+
+
+def new_focal_loss(logits, targets, alpha: float, gamma: float, normalizer, label_smoothing: float = 0.01):
+    """Compute the focal loss between `logits` and the golden `target` values.
+    'New' is not the best descriptor, but this focal loss impl matches recent versions of
+    the official Tensorflow impl of EfficientDet. It has support for label smoothing, however
+    it is a bit slower, doesn't jit optimize well, and uses more memory.
+    Focal loss = -(1-pt)^gamma * log(pt)
+    where pt is the probability of being classified to the true class.
+    Args:
+        logits: A float32 tensor of size [batch, height_in, width_in, num_predictions].
+        targets: A float32 tensor of size [batch, height_in, width_in, num_predictions].
+        alpha: A float32 scalar multiplying alpha to the loss from positive examples
+            and (1-alpha) to the loss from negative examples.
+        gamma: A float32 scalar modulating loss from hard and easy examples.
+        normalizer: Divide loss by this value.
+        label_smoothing: Float in [0, 1]. If > `0` then smooth the labels.
+    Returns:
+        loss: A float32 scalar representing normalized total loss.
+    """
+    # compute focal loss multipliers before label smoothing, such that it will not blow up the loss.
+    pred_prob = logits
+    # pred_prob = logits.sigmoid()
+    
+    targets = targets.to(logits.dtype)
+    onem_targets = 1. - targets
+    p_t = (targets * pred_prob) + (onem_targets * (1. - pred_prob))
+    alpha_factor = targets * alpha + onem_targets * (1. - alpha)
+    modulating_factor = (1. - p_t) ** gamma
+
+    # apply label smoothing for cross_entropy for each entry.
+    if label_smoothing > 0.:
+        targets = targets * (1. - label_smoothing) + .5 * label_smoothing
+    ce = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+
+    # compute the final loss and return
+    element_wise_loss = (1 / normalizer) * alpha_factor * modulating_factor * ce
+    return element_wise_loss.sum()
 
 
 class FocalL1_Loss(nn.Module):
@@ -29,7 +68,19 @@ class FocalL1_Loss(nn.Module):
 
         self.reg_weight = reg_weight if reg_weight else 1.0
         self.average = average
-
+    
+    @property
+    def accept_softmax(self):
+        if hasattr(self, '_accept_softmax'):
+            return self._accept_softmax
+        else:
+            return False
+    
+    @accept_softmax.setter
+    def accept_softmax(self, v: bool):
+        if not hasattr(self, '_accept_softmax'):
+            logger.warning(f"focal_loos.accept_softmax = {v}")
+        self._accept_softmax = v
 
     @staticmethod
     def focal_loss(cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
@@ -37,7 +88,7 @@ class FocalL1_Loss(nn.Module):
         fore_pred = cls_pred[fore_idx]
         back_pred = cls_pred[back_idx]
 
-        fore_pred_t = torch.where(fore_label_cls == 1, fore_pred, 1 - fore_pred)
+        fore_pred_t = torch.where(fore_label_cls == 1, fore_pred, 1 - fore_pred)  # _t for denote target
         back_pred_t = 1 - back_pred
 
         fore_alpha_t = torch.where(fore_label_cls == 1, alpha, 1 - alpha)
@@ -49,7 +100,10 @@ class FocalL1_Loss(nn.Module):
         fore_loss = fore_weight * torch.log(fore_pred_t)
         back_loss = back_weight * torch.log(back_pred_t)
 
-        loss = torch.sum(fore_loss) + torch.sum(back_loss)
+        floss = torch.sum(fore_loss)
+        bloss = torch.sum(back_loss)
+        cap = torch.max(floss * 10, torch.ones_like(floss) * 100)
+        loss = floss + bloss.clamp(max=cap)
         if mean:
             num = fore_idx.size(0)
             loss = loss / num if num > 0 else loss
@@ -127,7 +181,11 @@ class FocalL1_Loss(nn.Module):
 
         reg_preds = preds[..., :4]
         cls_preds = preds[..., 4:]
-        cls_preds = cls_preds.clamp(1e-5, 1.0 - 1e-5)
+        redu_prob = cls_preds.sum(dim=-1)
+        softmax = torch.allclose(redu_prob, torch.ones_like(redu_prob))
+        
+        cls_preds = cls_preds.clamp(1e-6, 1.0 - 1e-6)
+        self.accept_softmax = softmax
 
         target_assigns = self.anchor_assigner(labels, anchors)
         cls_losses, reg_losses = [], []
@@ -139,8 +197,16 @@ class FocalL1_Loss(nn.Module):
             fore_label_cls = assign['foreground'][1][..., 4:]
             fore_label_bbox = assign['foreground'][1][..., :4]
 
-            cls_losses.append(self.focal_smax_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
-            # cls_losses.append(self.focal_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
+            if softmax:
+                cls_losses.append(
+                    self.focal_smax_loss(
+                        cls_preds[i], fore_idx, back_idx, fore_label_cls, 
+                        self.alpha, self.gamma, self.fore_mean))
+            else:
+                cls_losses.append(
+                    self.focal_loss(
+                        cls_preds[i], fore_idx, back_idx, fore_label_cls, 
+                        self.alpha, self.gamma, self.fore_mean))
             reg_losses.append(self.smooothL1_loss(reg_preds[i], anchors, fore_idx, fore_label_bbox, self.beta, self.fore_mean))
 
         cls_loss = sum(cls_losses)
