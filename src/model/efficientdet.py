@@ -15,12 +15,14 @@ class RetinaNet_Frame(nn.Module):
     strides = None
 
     def __init__(self,
-                 img_size: int):
+                 img_size: int,
+                 freeze_backbone: bool=False):
 
-        print('The model is for images sized in {}x{}.'.format(img_size, img_size))
+        print(f'The model is for images sized in {img_size}x{img_size}, freeze_backbone: {freeze_backbone}')
         super().__init__()
 
         self.num_anchors = len(self.anchor_scales) * len(self.anchor_ratios)
+        self.freeze_backbone = freeze_backbone
 
         self.backbone = None
         self.fpn = None
@@ -30,7 +32,12 @@ class RetinaNet_Frame(nn.Module):
 
 
     def forward(self, input, detect: bool = False):
-        features = self.backbone(input)
+        if self.freeze_backbone:
+            with torch.no_grad():
+                features = self.backbone(input)
+        else:
+            features = self.backbone(input)
+
         features = self.fpn(features)
         out = self.head(features)
         if detect:
@@ -85,7 +92,8 @@ class EfficientDet(RetinaNet_Frame):
                  num_classes: int = 80,
                  background_class: bool = True,
                  pretrained: bool = False,
-                 pretrained_backbone: bool = False):
+                 pretrained_backbone: bool = False,
+                 **kwargs):
 
         self.img_size = self.resolutions[coeff]
 
@@ -105,7 +113,7 @@ class EfficientDet(RetinaNet_Frame):
 
         survival_prob = self.survival_probs[coeff]
 
-        super().__init__(self.img_size)
+        super().__init__(self.img_size, **kwargs)
 
         self.backbone = timm.create_model(f"efficientnet_b{coeff}", pretrained=True, features_only=True)
         self.backbone = FeaturePicker(self.backbone, [2, 3, 4])
@@ -155,7 +163,7 @@ class ConvNeXtDet(RetinaNet_Frame):
         d_head = self.config['head_depth'][coeff]
         w_head = self.config['head_width'][coeff]
 
-        super().__init__(self.img_size)
+        super().__init__(self.img_size, **kwargs)
 
         """
         'convnext_base.clip_laion2b': _cfg(
@@ -192,7 +200,8 @@ class ClipDet(RetinaNet_Frame):
     strides = [8, 16, 32, 64, 128]
 
     def __init__(self,
-                 coeff: int):
+                 coeff: int,
+                 **kwargs):
         coeff = 0
         self.img_size = self.resolutions[coeff]
 
@@ -203,7 +212,7 @@ class ClipDet(RetinaNet_Frame):
         d_head = self.config['head_depth'][coeff]
         w_head = self.config['head_width'][coeff]
 
-        super().__init__(self.img_size)
+        super().__init__(self.img_size, **kwargs)
 
         """
         'convnext_base.clip_laion2b': _cfg(

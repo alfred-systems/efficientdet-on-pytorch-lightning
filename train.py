@@ -27,10 +27,15 @@ def train(config_name=None, **kwargs):
         from src.utils.config_trainer import Config_Trainer
         from src.utils.wandb_logger import Another_WandbLogger
 
-        use_background_class = True
+        use_background_class = cfg.use_background_class if 'use_background_class' in cfg else True
+        freeze_backbone = cfg.freeze_backbone if 'freeze_backbone' in cfg else False
+        logger.info(f"freeze_backbone: {freeze_backbone}")
+        logger.info(f"use_background_class: {use_background_class}")
+        
         # lightning model
         pl_model = COCO_EfficientDet(**cfg.model.model, **cfg.model.loss, **cfg.model.nms, **cfg.model.optimizer,
-                                    val_annFile=cfg.dataset.val.annFile, background_class=use_background_class)
+                                    val_annFile=cfg.dataset.val.annFile, 
+                                    background_class=use_background_class, freeze_backbone=freeze_backbone)
         # augmentor
         augmentor = default_augmentor(pl_model.model.img_size)
 

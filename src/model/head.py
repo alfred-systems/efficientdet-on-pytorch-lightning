@@ -34,7 +34,7 @@ class Classifier(nn.Module):
         ])
         self.act = Act
 
-        self.conv_pred = nn.Conv2d(width, num_anchors * num_classes, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv_pred = nn.Conv2d(width, num_anchors * num_classes, kernel_size=3, stride=1, padding=1, bias=True)
         # self.conv_pred = Seperable_Conv2d(width, num_anchors * num_classes, bias=True)
 
 

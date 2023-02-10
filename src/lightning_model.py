@@ -63,6 +63,7 @@ class COCO_EfficientDet(pl.LightningModule):
                  lr: float = 1e-4,
                  val_annFile: str = None,
                  background_class: bool = True,
+                 freeze_backbone: bool = False,
                  ):
 
         super().__init__()
@@ -84,6 +85,7 @@ class COCO_EfficientDet(pl.LightningModule):
         self.lr = lr
         self.annFile = val_annFile
         self.background_class = background_class
+        self.freeze_backbone = freeze_backbone
 
         self.model = self.configure_model()
         self.anchors = self.model.anchors
@@ -97,8 +99,8 @@ class COCO_EfficientDet(pl.LightningModule):
         self.val_map = MeanAveragePrecision(box_format="xywh", class_metrics=False)
 
     def configure_model(self):
-        model = EfficientDet(self.coeff, 80, background_class=self.background_class)
-        # model = ConvNeXtDet(self.coeff, 80, self.pretrained_backbone)
+        model = EfficientDet(self.coeff, 80, background_class=self.background_class, freeze_backbone=self.freeze_backbone)
+        # model = ConvNeXtDet(self.coeff, 80, background_class=self.background_class, freeze_backbone=self.freeze_backbone)
 
         # if not self.pretrained_backbone:
         #     raise RuntimeError('not suposse to use this option')
