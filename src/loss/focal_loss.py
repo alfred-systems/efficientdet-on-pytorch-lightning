@@ -102,8 +102,9 @@ class FocalL1_Loss(nn.Module):
 
         floss = torch.sum(fore_loss)
         bloss = torch.sum(back_loss)
-        cap = torch.max(floss * 10, torch.ones_like(floss) * 100)
-        loss = floss + bloss.clamp(max=cap)
+        # cap = torch.max(floss * 10, torch.ones_like(floss) * 100)
+        # loss = floss + bloss.clamp(max=cap)
+        loss = floss + bloss
         if mean:
             num = fore_idx.size(0)
             loss = loss / num if num > 0 else loss
@@ -236,7 +237,8 @@ class ContrastiveL1_Loss(FocalL1_Loss):
                  fore_mean: bool = True,
                  reg_weight: Optional[float] = None,
                  average: bool = True,
-                 bbox_format: str = 'cxcywh'
+                 bbox_format: str = 'cxcywh',
+                 temperature: float = 1.0,
                  ):
 
         super().__init__()
@@ -252,10 +254,40 @@ class ContrastiveL1_Loss(FocalL1_Loss):
 
         self.reg_weight = reg_weight if reg_weight else 1.0
         self.average = average
+        self.temperature = temperature
     
     @staticmethod
-    def contrastive_loss(cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
-        raise NotImplementedError()
+    def contrastive_loss(anchor_emb, fore_idx, back_idx, fore_label_emb, num_neg_samples=1000, temperature=1.0):
+        """
+        Original CLIP loss
+        
+        logits = (text_embeddings @ image_embeddings.T) / self.temperature
+        images_similarity = image_embeddings @ image_embeddings.T
+        texts_similarity = text_embeddings @ text_embeddings.T
+        targets = F.softmax(
+            (images_similarity + texts_similarity) / 2 * self.temperature, dim=-1
+        )
+        images_loss = (-targets.T * self.log_softmax(logits.T)).sum(1)
+        """
+        fore_emb = anchor_emb[fore_idx]
+        back_emb = anchor_emb[back_idx]
+        back_emb = back_emb[:num_neg_samples]
+
+        fore_img_similarity = fore_emb @ fore_emb.T
+        fore_txt_similarity = fore_label_emb @ fore_label_emb.T
+        fore_targets = F.softmax(
+            (fore_img_similarity + fore_txt_similarity) / 2 * temperature, dim=-1
+        )
+        logits = (fore_label_emb @ fore_emb.T) / temperature
+        fore_loss = (-fore_targets.T * F.log_softmax(logits.T, dim=-1)).sum(1)
+        
+        f2b_emb = torch.cat([fore_emb, back_emb], dim=0)
+        f2b_similarity = f2b_emb @ f2b_emb.T
+        f2b_target = F.softmax(f2b_similarity * temperature, dim=-1)
+        back_loss = (-f2b_target.T * F.log_softmax((f2b_similarity / temperature).T, dim=-1)).sum(1)
+        
+        return fore_loss + back_loss
+
 
     def forward(self,
                 preds: Tensor,
@@ -273,8 +305,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
             raise ValueError("labels should be given in 3d tensor")
 
         reg_preds = preds[..., :4]
-        cls_preds = preds[..., 4:]
-        cls_preds = cls_preds.clamp(1e-5, 1.0 - 1e-5)
+        embed_preds = preds[..., 4:]
 
         target_assigns = self.anchor_assigner(labels, anchors)
         cls_losses = []
@@ -285,11 +316,11 @@ class ContrastiveL1_Loss(FocalL1_Loss):
             fore_idx = assign['foreground'][0]
             back_idx = assign['background'][0]
 
-            fore_label_cls = assign['foreground'][1][..., 4:]
+            fore_label_emb = assign['foreground'][1][..., 4:]
             fore_label_bbox = assign['foreground'][1][..., :4]
 
-            cls_losses.append(self.focal_smax_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
-            emb_losses.append(self.contrastive_loss(cls_preds[i], fore_idx, back_idx, fore_label_cls, self.alpha, self.gamma, self.fore_mean))
+            # cls_losses.append(self.focal_smax_loss(embed_preds[i], fore_idx, back_idx, fore_label_emb, self.alpha, self.gamma, self.fore_mean))
+            emb_losses.append(self.contrastive_loss(embed_preds[i], fore_idx, back_idx, fore_label_emb))
             reg_losses.append(self.smooothL1_loss(reg_preds[i], anchors, fore_idx, fore_label_bbox, self.beta, self.fore_mean))
 
         cls_loss = sum(cls_losses)

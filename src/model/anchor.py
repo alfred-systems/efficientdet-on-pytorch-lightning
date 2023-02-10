@@ -125,7 +125,16 @@ class Anchor_Assigner(nn.Module):
                     batch_assign.append({'foreground': [fore_mask.nonzero(as_tuple=True)[0], assigned_target[fore_mask]],
                                         'background': [back_mask.nonzero(as_tuple=True)[0], assigned_target[back_mask]]})
             elif self.label_type == 'embed':
-                pass
+                batch_assign.append({
+                    'foreground': [
+                        fore_mask.nonzero(as_tuple=True)[0], 
+                        assigned_target[fore_mask]
+                    ],
+                    'background': [
+                        back_mask.nonzero(as_tuple=True)[0], 
+                        assigned_target[back_mask]
+                    ]
+                })
             else:
                 raise ValueError(f"Unknow loss function label type: {self.label_type}")
 

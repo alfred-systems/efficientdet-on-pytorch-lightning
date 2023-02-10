@@ -193,6 +193,11 @@ class VisualGenome(VisionDataset):
         with open(region_anno_path, mode='r') as f:
             self.region_anno = json.load(f)
         self.augmentor = bbox_augmentor
+        
+        self.cache_file = os.path.join(img_dir, "embed_cache.pth")
+        if not os.path.exists(self.cache_file):
+            self.create_region_embed(self.cache_file)
+        self.phrase_embed = torch.load(self.cache_file)
     
     def create_region_embed(self, cache_file: str):
         import open_clip
@@ -200,17 +205,16 @@ class VisualGenome(VisionDataset):
         model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms('convnext_base_w', pretrained='laion2B-s13B-b82K')
         tokenizer = open_clip.get_tokenizer('convnext_base_w')
         model = model.to('cuda')
-
-        raise NotImplementedError("this is a in-completed implementation, dont use it yet")
         
         embed_table = {}
-        for i in range(len(self)):
-            reg_id = self.region_anno[i]['region_id']
-            phrase = self.region_anno[i]['phrase']
-            input_ids = tokenizer(phrase)
-            embed = model.encode_text(input_ids)
-            assert embed.ndim == 2 and embed.size(0) == 1
-            embed_table[reg_id] = embed.cpu()[0]
+        with torch.no_grad():
+            for i in range(len(self)):
+                reg_id = self.region_anno[i]['region_id']
+                phrase = self.region_anno[i]['phrase']
+                input_ids = tokenizer(phrase)
+                embed = model.encode_text(input_ids)
+                assert embed.ndim == 2 and embed.size(0) == 1
+                embed_table[reg_id] = embed.cpu()[0]
         
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         torch.save(embed_table)
@@ -231,10 +235,20 @@ class VisualGenome(VisionDataset):
             image = np.transpose(image, (2, 0, 1))
             image = torch.from_numpy(image)
         
+        boxes = []
+        phr_embed = []
         for region in meta['regions']:
             x: int = region['x']
             y: int = region['y']
             w: int = region['width']
             h: int = region['height']
-            phrase: str = region['phrase']
+            # phrase: str = region['phrase']
             reg_id: int = region['region_id']
+
+            phr_embed.append(self.phrase_embed[reg_id])
+            boxes.append([x, y, w, h])
+        
+        phr_embed = torch.stack(phr_embed)  # (n, 640)
+        boxes = torch.tensor(boxes)  # (n, 4)
+        labels = torch.cat([boxes, phr_embed], dim=-1)
+        return image, labels
