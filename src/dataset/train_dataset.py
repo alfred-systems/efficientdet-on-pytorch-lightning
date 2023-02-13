@@ -1,5 +1,6 @@
 import os
 import json
+import glob
 
 from src.dataset.utils import *
 from src.dataset.bbox_augmentor import Bbox_Augmentor
@@ -184,7 +185,7 @@ class COCO_Detection(VisionDataset):
 
 
 class VisualGenome(VisionDataset):
-    MODEL = "convnext_base.clip_laion2b"
+    MODEL = "convnext_base_w"
 
     def __init__(self, img_dir: str, 
                  region_anno_path: str, 
@@ -196,25 +197,26 @@ class VisualGenome(VisionDataset):
         
         self.cache_file = os.path.join(img_dir, "embed_cache.pth")
         if not os.path.exists(self.cache_file):
-            self.create_region_embed(self.cache_file)
+            self._create_region_embed(self.cache_file)
         self.phrase_embed = torch.load(self.cache_file)
     
-    def create_region_embed(self, cache_file: str):
+    def _create_region_embed(self, cache_file: str):
         import open_clip
         
-        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms('convnext_base_w', pretrained='laion2B-s13B-b82K')
-        tokenizer = open_clip.get_tokenizer('convnext_base_w')
+        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(self.MODEL, pretrained='laion2B-s13B-b82K')
+        tokenizer = open_clip.get_tokenizer(self.MODEL)
         model = model.to('cuda')
         
         embed_table = {}
         with torch.no_grad():
             for i in range(len(self)):
-                reg_id = self.region_anno[i]['region_id']
-                phrase = self.region_anno[i]['phrase']
-                input_ids = tokenizer(phrase)
-                embed = model.encode_text(input_ids)
-                assert embed.ndim == 2 and embed.size(0) == 1
-                embed_table[reg_id] = embed.cpu()[0]
+                for region in self.region_anno[i]:
+                    reg_id = region['region_id']
+                    phrase = region['phrase']
+                    input_ids = tokenizer(phrase)
+                    embed = model.encode_text(input_ids)
+                    assert embed.ndim == 2 and embed.size(0) == 1
+                    embed_table[reg_id] = embed.cpu()[0]
         
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         torch.save(embed_table)
@@ -252,3 +254,76 @@ class VisualGenome(VisionDataset):
         boxes = torch.tensor(boxes)  # (n, 4)
         labels = torch.cat([boxes, phr_embed], dim=-1)
         return image, labels
+
+
+class Laion400M(VisionDataset):
+    MODEL = "convnext_base.clip_laion2b"
+
+    def __init__(self, img_dir: str, 
+                 region_anno_path: str, 
+                 bbox_augmentor: Optional[Bbox_Augmentor]):
+        self.img_dir = img_dir
+        self._list_dataset_files(img_dir)
+        self.img_ids = sorted(self.data_dict.keys())
+        self.augmentor = bbox_augmentor
+        
+        self.cache_file = os.path.join(img_dir, "embed_cache.pth")
+        if not os.path.exists(self.cache_file):
+            self._create_region_embed(self.cache_file)
+        self.phrase_embed = torch.load(self.cache_file)
+    
+    def _list_dataset_files(self, root_dir: str):
+        assert os.path.exists(root_dir)
+        
+        imgs = glob.glob(os.path.join(root_dir, "**/*.jpg"), recursive=True)
+        captions = glob.glob(os.path.join(root_dir, "**/*.txt"), recursive=True)
+        data_dict = {}
+        for img_path in imgs:
+            img_id = os.path.basename(img_path).replace('.jpg', '')
+            data_dict[img_id] = {'img_path':  img_path}
+        for cap_txt in captions:
+            img_id = os.path.basename(img_path).replace('.txt', '')
+            if img_id in data_dict:
+                with open(cap_txt, mode='r') as f:
+                    data_dict[img_id]['caption'] = f.read()
+        self.data_dict = {
+            k: v for k, v in data_dict.items() 
+            if 'img_path' in v and 'caption' in v
+        }
+    
+    def _create_region_embed(self, cache_file: str):
+        import open_clip
+        
+        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(self.MODEL, pretrained='laion2B-s13B-b82K')
+        tokenizer = open_clip.get_tokenizer(self.MODEL)
+        model = model.to('cuda')
+        
+        embed_table = {}
+        with torch.no_grad():
+            for img_id, meta in self.data_dict.items():
+                caption = meta['caption']
+                input_ids = tokenizer(caption)
+                embed = model.encode_text(input_ids)
+                assert embed.ndim == 2 and embed.size(0) == 1
+                embed_table[img_id] = embed.cpu()[0]
+        
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        torch.save(embed_table)
+    
+    def __len__(self):
+        return len(self.data_dict)
+    
+    def __getitem__(self, index: int):
+        img_id: str = self.img_ids[index]
+        image = cv2.imread(self.data_dict[img_id])
+        
+        if self.augmentor:
+            transform = self.augmentor(image, bboxes, category_ids)
+            image, bboxes, category_ids = transform.values()
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = np.transpose(image, (2, 0, 1))
+            image = torch.from_numpy(image)
+        
+        txt_embed = self.phrase_embed[img_id]
+        return image, txt_embed
