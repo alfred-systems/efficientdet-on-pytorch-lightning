@@ -11,11 +11,12 @@ class Validate_Detection(Dataset):
 
     def __init__(self,
                  root: str,
-                 annFile: str,
-                 img_size: int,
+                 annFile: str='',
+                 img_size: int=512,
                  dataset_stat: Tuple = ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-                 max_det=100
-                 ):
+                 max_det=100,
+                 **kwargs,
+                ):
 
         self.root = root
         self.img_paths = os.listdir(self.root)

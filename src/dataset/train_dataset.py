@@ -111,12 +111,14 @@ class COCO_Detection(VisionDataset):
     num_classes = 80
     coco_cat = (i for i in range(1, 91))
     missing_cat = (12, 26, 29, 30, 45, 66, 68, 69, 71, 83, 91)
+    collect_fn = make_mini_batch
 
     def __init__(self,
                  root: str,
-                 annFile: str,
-                 bbox_augmentor: Optional[Bbox_Augmentor],
-                 background_class=True,):
+                 annFile: str='',
+                 bbox_augmentor: Optional[Bbox_Augmentor]=None,
+                 background_class=True,
+                 **kwargs):
 
         super().__init__(root)
 
@@ -133,10 +135,8 @@ class COCO_Detection(VisionDataset):
 
         self.cat_table = category_filter(self.coco_cat, self.missing_cat)
 
-
     def __len__(self):
         return len(self.ids)
-
 
     def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
         coco = self.coco
@@ -185,13 +185,16 @@ class COCO_Detection(VisionDataset):
 
 
 class VisualGenome(VisionDataset):
+    
     MODEL = "convnext_base_w"
+    collect_fn = None
 
     def __init__(self, img_dir: str, 
-                 region_anno_path: str, 
-                 bbox_augmentor: Optional[Bbox_Augmentor]):
+                 annFile: str = '', 
+                 bbox_augmentor: Optional[Bbox_Augmentor]=None,
+                 **kwargs):
         self.img_dir = img_dir
-        with open(region_anno_path, mode='r') as f:
+        with open(annFile, mode='r') as f:
             self.region_anno = json.load(f)
         self.augmentor = bbox_augmentor
         
@@ -219,7 +222,7 @@ class VisualGenome(VisionDataset):
                     embed_table[reg_id] = embed.cpu()[0]
         
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-        torch.save(embed_table)
+        torch.save(embed_table, cache_file)
     
     def __len__(self):
         return len(self.region_anno)
@@ -230,6 +233,7 @@ class VisualGenome(VisionDataset):
         image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
         
         if self.augmentor:
+            category_ids = 0  # TODO: decide to make use of category label or not
             transform = self.augmentor(image, bboxes, category_ids)
             image, bboxes, category_ids = transform.values()
         else:
@@ -257,20 +261,27 @@ class VisualGenome(VisionDataset):
 
 
 class Laion400M(VisionDataset):
-    MODEL = "convnext_base.clip_laion2b"
 
-    def __init__(self, img_dir: str, 
-                 region_anno_path: str, 
-                 bbox_augmentor: Optional[Bbox_Augmentor]):
+    MODEL = "convnext_base_w"
+    collect_fn = None
+
+    def __init__(self, 
+                 img_dir: str, 
+                 bbox_augmentor: Optional[Bbox_Augmentor]=None,
+                 **kwargs):
         self.img_dir = img_dir
         self._list_dataset_files(img_dir)
         self.img_ids = sorted(self.data_dict.keys())
-        self.augmentor = bbox_augmentor
-        
-        self.cache_file = os.path.join(img_dir, "embed_cache.pth")
-        if not os.path.exists(self.cache_file):
-            self._create_region_embed(self.cache_file)
-        self.phrase_embed = torch.load(self.cache_file)
+        self.augmentor = bbox_augmentor        
+    
+    @property
+    def phrase_embed(self):
+        if not hasattr(self, '_phrase_embed'):
+            self.cache_file = os.path.join(self.img_dir, "embed_cache.pth")
+            if not os.path.exists(self.cache_file):
+                self._create_region_embed(self.cache_file)
+            self._phrase_embed = torch.load(self.cache_file)
+        return self._phrase_embed
     
     def _list_dataset_files(self, root_dir: str):
         assert os.path.exists(root_dir)
@@ -282,7 +293,7 @@ class Laion400M(VisionDataset):
             img_id = os.path.basename(img_path).replace('.jpg', '')
             data_dict[img_id] = {'img_path':  img_path}
         for cap_txt in captions:
-            img_id = os.path.basename(img_path).replace('.txt', '')
+            img_id = os.path.basename(cap_txt).replace('.txt', '')
             if img_id in data_dict:
                 with open(cap_txt, mode='r') as f:
                     data_dict[img_id]['caption'] = f.read()
@@ -303,23 +314,24 @@ class Laion400M(VisionDataset):
             for img_id, meta in self.data_dict.items():
                 caption = meta['caption']
                 input_ids = tokenizer(caption)
-                embed = model.encode_text(input_ids)
+                embed = model.encode_text(input_ids.to('cuda'))
                 assert embed.ndim == 2 and embed.size(0) == 1
                 embed_table[img_id] = embed.cpu()[0]
         
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-        torch.save(embed_table)
+        torch.save(embed_table, cache_file)
     
     def __len__(self):
         return len(self.data_dict)
     
     def __getitem__(self, index: int):
         img_id: str = self.img_ids[index]
-        image = cv2.imread(self.data_dict[img_id])
+
+        image = cv2.imread(self.data_dict[img_id]['img_path'])
         
         if self.augmentor:
-            transform = self.augmentor(image, bboxes, category_ids)
-            image, bboxes, category_ids = transform.values()
+            transform = self.augmentor(image)
+            image = transform['image']
         else:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = np.transpose(image, (2, 0, 1))

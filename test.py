@@ -89,8 +89,14 @@ def inferece():
         print(predict.shape)
     # print(pl_model)
 
+
+def dataset_warmup():
+    from src.dataset.train_dataset import Laion400M, VisualGenome
+    dataset = Laion400M("/home/ron_zhu/laion-400m/train_data", None)
+
     
 if __name__ == "__main__":
     # test()
     # inferece()
-    dataset_sanity()
+    # dataset_sanity()
+    dataset_warmup()

@@ -68,8 +68,8 @@ class Bbox_Augmentor:
 
     def __call__(self,
                  image: Numpy,
-                 bboxes: Optional[List[list]],
-                 category_ids: Optional[List[int]]
+                 bboxes: Optional[List[list]]=None,
+                 category_ids: Optional[List[int]]=None,
                  ) -> Dict:
 
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

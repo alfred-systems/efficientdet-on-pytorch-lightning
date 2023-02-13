@@ -229,6 +229,7 @@ class ClipDet(RetinaNet_Frame):
 
         self.fpn = BiFPN(num_levels, d_bifpn, channels, w_bifpn, Act=nn.ReLU())
         self.head = ClipDet_Head(num_levels, d_head, w_head, self.num_anchors, 640, nn.ReLU())
+        self.global_emb_proj = torch.nn.Linear(w_head, 640)
     
     def forward(self, input, detect: bool=False, global_feat: bool=False):
         features = self.backbone(input)
@@ -237,7 +238,10 @@ class ClipDet(RetinaNet_Frame):
         if detect:
             self.detect(out)
         if global_feat:
-            global_avgs = [feat.mean(dim=[2, 3]) for feat in features]
+            global_avgs = [
+                self.global_emb_proj(feat.mean(dim=[2, 3]))
+                for feat in features
+            ]
             return out, self.anchors, global_avgs
         else:
             return out, self.anchors

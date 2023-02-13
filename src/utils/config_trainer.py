@@ -39,7 +39,7 @@ class Config_Trainer:
         https://pytorch-lightning.readthedocs.io/en/stable/api_references.html
     """
 
-    config_set = {'Trainer', 'Callbacks', 'Profiler', 'Logger', 'Strategy', 'Plugins'}
+    config_set = {'Trainer', 'Callbacks', 'Profiler', 'Logger', 'Strategy', 'Plugins', 'Task'}
 
     def __init__(self, cfg: Union[DictConfig, str]):
         if isinstance(cfg, DictConfig):

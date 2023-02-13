@@ -41,6 +41,21 @@ def new_focal_loss(logits, targets, alpha: float, gamma: float, normalizer, labe
     return element_wise_loss.sum()
 
 
+def clip_loss(image_embeddings, text_embeddings, temperature=1.0):
+    image_embeddings = F.normalize(image_embeddings, dim=1)
+    text_embeddings = F.normalize(text_embeddings, dim=1)
+
+    logits = (text_embeddings @ image_embeddings.T) / temperature
+    images_similarity = image_embeddings @ image_embeddings.T
+    texts_similarity = text_embeddings @ text_embeddings.T
+    targets = F.softmax(
+        (images_similarity + texts_similarity) / 2 * temperature, dim=-1
+    )
+    images_loss = (-targets.T * F.log_softmax(logits.T)).sum(1)
+    texts_loss = (-targets * F.log_softmax(logits)).sum(1)
+    return (images_loss + texts_loss) / 2.0
+
+
 class FocalL1_Loss(nn.Module):
 
     def __init__(self,
@@ -241,19 +256,11 @@ class ContrastiveL1_Loss(FocalL1_Loss):
                  temperature: float = 1.0,
                  ):
 
-        super().__init__()
+        super().__init__(
+            fore_th, back_th, alpha, gamma, beta, 
+            fore_mean, reg_weight, average, bbox_format)
 
-        self.fore_th = fore_th
-        self.back_th = back_th
         self.anchor_assigner = Anchor_Assigner(fore_th, back_th, False, False, bbox_format, label_type='embed')
-
-        self.alpha = alpha
-        self.gamma = gamma
-        self.beta = beta
-        self.fore_mean = fore_mean
-
-        self.reg_weight = reg_weight if reg_weight else 1.0
-        self.average = average
         self.temperature = temperature
     
     @staticmethod
@@ -271,7 +278,10 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         """
         fore_emb = anchor_emb[fore_idx]
         back_emb = anchor_emb[back_idx]
-        back_emb = back_emb[:num_neg_samples]
+        back_emb = back_emb[torch.randperm(num_neg_samples)]
+
+        fore_emb = F.normalize(fore_emb, dim=1)
+        back_emb = F.normalize(back_emb, dim=1)
 
         fore_img_similarity = fore_emb @ fore_emb.T
         fore_txt_similarity = fore_label_emb @ fore_label_emb.T

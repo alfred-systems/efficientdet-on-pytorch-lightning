@@ -9,7 +9,7 @@ from src.__init__ import *
 from src.utils.bbox import convert_bbox, untransform_bbox
 from src.dataset.metric import Evaluate_COCO
 from src.model.efficientdet import EfficientDet, ConvNeXtDet, ClipDet
-from src.loss.focal_loss import FocalL1_Loss, ContrastiveL1_Loss
+from src.loss.focal_loss import FocalL1_Loss, ContrastiveL1_Loss, clip_loss
 from src.utils.nms.hard_nms import Hard_NMS
 from src.dataset.train_dataset import CLASS_NAME
 
@@ -94,7 +94,7 @@ class COCO_EfficientDet(pl.LightningModule):
 
         self.val_result_dir = None
         self.test_result_dir = None
-        self.plot_freq = 50
+        self.plot_freq = 500
         # TODO: https://github.com/Lightning-AI/metrics/issues/1024
         self.val_map = MeanAveragePrecision(box_format="xywh", class_metrics=False)
 
@@ -128,7 +128,7 @@ class COCO_EfficientDet(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = AdamW([
-            {"params": self.model.backbone.parameters(), 'lr': self.lr / 4},
+            {"params": self.model.backbone.parameters(), 'lr': self.lr / 1},
             {"params": self.model.fpn.parameters(), 'lr': self.lr},
             {"params": self.model.head.parameters(), 'lr': self.lr},
         ], self.lr)
@@ -150,8 +150,8 @@ class COCO_EfficientDet(pl.LightningModule):
                     nn.init.constant_(module.bias, 0)
 
 
-    def forward(self, input: torch.Tensor, detect: bool):
-        return self.model(input, detect)
+    def forward(self, input: torch.Tensor, detect: bool, **kwargs):
+        return self.model(input, detect,  **kwargs)
 
 
     def training_step(self, batch, batch_idx):
@@ -174,10 +174,15 @@ class COCO_EfficientDet(pl.LightningModule):
         extra = batch[4]
         preds, _ = self.model(inputs, detect=True)
         device = preds.device
+        batch_size = preds.size(0)
         preds = self.nms(preds)
 
         # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
-        plot = batch_idx % self.plot_freq == 0 and hasattr(self.logger, 'log_image')
+        sample_range = (batch_idx * batch_size, (batch_idx + 1) * batch_size)
+        plot =  (
+            sample_range[0] <= self.plot_freq * sample_range[0] // self.plot_freq <= sample_range[1] 
+            and hasattr(self.logger, 'log_image')
+        )
         batch_boxes = []
         metrix_pred = []
         metrix_tar = []
@@ -291,6 +296,68 @@ class COCO_EfficientDet(pl.LightningModule):
 
 
 
+class Laion400m_EfficientDet(COCO_EfficientDet):
+    """
+    Re-align model's global average embedding coming out of the BiFPN with CLIP text encoder
+    """
+
+    def configure_model(self):
+        model = ClipDet(self.coeff)
+
+        if not self.pretrained_backbone:
+            raise RuntimeError('not suposse to use this option')
+            self.initialize_weight(model)
+        else:
+            self.initialize_weight(model.fpn)
+            self.initialize_weight(model.head)
+
+        if self.ckpt_path:
+            ckpt = torch.load(self.ckpt_path)
+            assert isinstance(ckpt, OrderedDict), 'please load EfficientDet checkpoints'
+            assert next(iter(ckpt)).split('.')[0] != 'model', 'please load EfficientDet checkpoints'
+            model.load_state_dict(torch.load(self.ckpt_path))
+
+        return model
+    
+    def training_step(self, batch, batch_idx):
+        inputs, labels = batch
+        preds, anchors, global_avgs = self.model(inputs, detect=False, global_feat=True)
+        
+        losses = []
+        for layer_global_avg in global_avgs:
+            losses.append(clip_loss(layer_global_avg, labels))
+        loss = sum(losses).mean()
+        self.log('train_loss', loss)
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        inputs, labels = batch
+        preds, anchors, global_avgs = self.model(inputs, detect=False, global_feat=True)
+        
+        losses = []
+        for layer_global_avg in global_avgs:
+            losses.append(clip_loss(layer_global_avg, labels))
+        loss = sum(losses)
+        return loss
+
+    def validation_epoch_end(self, val_step):
+        num_samples = 0
+        loss_sum = 0
+        for batch_loss in val_step:
+            num_samples += batch_loss.size(0)
+            loss_sum += torch.sum(batch_loss)
+        val_loss = loss_sum / num_samples
+        self.log('val_loss', val_loss, sync_dist=True)
+    
+    def test_step(self, batch, batch_idx):
+        raise NotImplementedError("Embedding alignment is not the main task that meant to be evaled")
+
+    def configure_loss_function(self):
+        return ContrastiveL1_Loss(
+            self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
+            fore_mean=self.fore_mean, reg_weight=self.reg_weight, average=self.average, bbox_format='cxcywh')
+
+
 class VisGenome_EfficientDet(COCO_EfficientDet):
 
     def configure_model(self):
@@ -314,6 +381,6 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
     def configure_loss_function(self):
         return ContrastiveL1_Loss(
             self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
-            self.fore_mean, self.reg_weight, self.average, 'cxcywh')
+            fore_mean=self.fore_mean, reg_weight=self.reg_weight, average=self.average, bbox_format='cxcywh')
     
     
