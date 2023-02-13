@@ -8,9 +8,11 @@ This is a [PyTorch Lightning](https://pytorch-lightning.readthedocs.io/en/stable
 
 - [X] Sanity check trianing a MS-COCO B0 detector and eval its performance
 - [X] Replace the detector backbone with CLIP-like model, and train it on MS-COCO
-- [ ] (WIP) Freeze CLIP-like backbone, and train it on MS-COCO
+- [X] Freeze CLIP-like backbone, and train it on MS-COCO
 - [ ] (WIP) Add support for Visual-Gnome dataset and bounding box description
-- [ ] Replace classification head with embedding head for per anchor CLIP-like training target
+- [ ] (WIP) Replace classification head with embedding head for per anchor CLIP-like training target
+  - [ ] First try to align new global(-avg) embedding from BiFPN to CLIP on LAION-400M dataset
+  - [ ] Then align the embedding per anchor to region description from Visual-Genome dataset
 - [ ] Testing model variation with both classification(background/non-background) head with CLIP embedding head
 - [ ] Maybe give two stage detector a try(just like what [Findit](https://sites.google.com/view/findit-eccv22/home?authuser=0&pli=1) does)
 
