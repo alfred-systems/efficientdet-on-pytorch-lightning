@@ -1,3 +1,7 @@
+Task:
+  pl_module: COCO_EfficientDet
+
+
 Trainer:
   max_epochs: 100
   accelerator: gpu
@@ -6,10 +10,6 @@ Trainer:
 
 
 Callbacks:
-  EarlyStopping:
-    monitor: val_map
-    patience: 100
-    check_on_train_epoch_end: False
 
   LearningRateMonitor:
     logging_interval: step

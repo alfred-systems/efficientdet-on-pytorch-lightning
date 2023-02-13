@@ -1,0 +1,14 @@
+train:
+  root: /home/ron/Downloads/mscoco/train2017
+  annFile: /home/ron/Downloads/mscoco/annotations_trainval2017/instances_train2017.json
+
+val:
+  root: /home/ron/Downloads/mscoco/val2017
+  annFile: /home/ron/Downloads/mscoco/annotations_trainval2017/instances_val2017.json
+
+test:
+  root: /home/ron/Downloads/mscoco/val2017
+
+dataset_stat:
+  - [0.485, 0.456, 0.406]   # mean
+  - [0.229, 0.224, 0.225]   # std
