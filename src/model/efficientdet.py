@@ -16,6 +16,7 @@ class RetinaNet_Frame(nn.Module):
 
     def __init__(self,
                  img_size: int,
+                 background_class: bool = True,
                  freeze_backbone: bool=False):
 
         print(f'The model is for images sized in {img_size}x{img_size}, freeze_backbone: {freeze_backbone}')
@@ -201,10 +202,10 @@ class ClipDet(RetinaNet_Frame):
 
     def __init__(self,
                  coeff: int,
+                 freeze_backbone: bool=False,
                  **kwargs):
         coeff = 0
         self.img_size = self.resolutions[coeff]
-
         num_levels = len(self.strides)
 
         d_bifpn = self.config['bifpn_depth'][coeff]
@@ -213,6 +214,7 @@ class ClipDet(RetinaNet_Frame):
         w_head = self.config['head_width'][coeff]
 
         super().__init__(self.img_size, **kwargs)
+        self.freeze_backbone = freeze_backbone
 
         """
         'convnext_base.clip_laion2b': _cfg(
@@ -229,21 +231,28 @@ class ClipDet(RetinaNet_Frame):
 
         self.fpn = BiFPN(num_levels, d_bifpn, channels, w_bifpn, Act=nn.ReLU())
         self.head = ClipDet_Head(num_levels, d_head, w_head, self.num_anchors, 640, nn.ReLU())
-        self.global_emb_proj = torch.nn.Linear(w_head, 640)
+        # self.global_emb_projs = nn.ModuleList([torch.nn.Linear(w_head, 640) for _ in range(3)])
     
     def forward(self, input, detect: bool=False, global_feat: bool=False):
-        features = self.backbone(input)
+        if self.freeze_backbone:
+            with torch.no_grad():
+                features = self.backbone(input)
+        else:
+            features = self.backbone(input)
+        
         features = self.fpn(features)
-        out = self.head(features)
-        if detect:
-            self.detect(out)
+        
         if global_feat:
+            out, features = self.head(features, flatten_emb=False)
             global_avgs = [
-                self.global_emb_proj(feat.mean(dim=[2, 3]))
-                for feat in features
+                feat.mean(dim=[2, 3])
+                for feat in features[2:]
             ]
             return out, self.anchors, global_avgs
         else:
+            out = self.head(features)
+            if detect:
+                self.detect(out)
             return out, self.anchors
 
 

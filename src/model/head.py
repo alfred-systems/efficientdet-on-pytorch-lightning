@@ -27,7 +27,6 @@ class Classifier(nn.Module):
             # Seperable_Conv2d(width, width, 3, 1, bias=True)
             for _ in range(depth)
         ])
-
         self.bn_layers = nn.ModuleList([
             nn.ModuleList([nn.BatchNorm2d(width) for _ in range(depth)])
             for _ in range(num_levels)
@@ -37,8 +36,7 @@ class Classifier(nn.Module):
         self.conv_pred = nn.Conv2d(width, num_anchors * num_classes, kernel_size=3, stride=1, padding=1, bias=True)
         # self.conv_pred = Seperable_Conv2d(width, num_anchors * num_classes, bias=True)
 
-
-    def forward(self, features):
+    def forward(self, features, flatten=True):
         out = []
         for i in range(self.num_levels):
             f = features[i]
@@ -50,19 +48,20 @@ class Classifier(nn.Module):
 
             pred = self.conv_pred(f)
 
-            pred = pred.permute(0, 2, 3, 1)
-            pred = pred.contiguous().view(pred.shape[0], pred.shape[1], pred.shape[2], self.num_anchors, self.num_classes)
-            pred = pred.contiguous().view(pred.shape[0], -1, self.num_classes)
+            if flatten:
+                pred = pred.permute(0, 2, 3, 1)
+                pred = pred.contiguous().view(pred.shape[0], pred.shape[1], pred.shape[2], self.num_anchors, self.num_classes)
+                pred = pred.contiguous().view(pred.shape[0], -1, self.num_classes)
             if self.output_prob:
                 if self.use_background_class:
                     pred = torch.nn.functional.softmax(pred, dim=-1)
                 else:
                     pred = torch.nn.functional.sigmoid(pred)
             out.append(pred)
-        out = torch.cat(out, dim=1)
-
+        
+        if flatten:
+            out = torch.cat(out, dim=1)
         return out
-
 
 
 class Regressor(nn.Module):
@@ -79,15 +78,16 @@ class Regressor(nn.Module):
 
         super().__init__()
 
-        self.conv_layers = nn.ModuleList([Seperable_Conv2d(width, width, 3, 1, bias=True)
-                                          for _ in range(depth)])
-
-        self.bn_layers = nn.ModuleList([nn.ModuleList([nn.BatchNorm2d(width) for _ in range(depth)])
-                                        for _ in range(num_levels)])
+        self.conv_layers = nn.ModuleList([
+            Seperable_Conv2d(width, width, 3, 1, bias=True)
+            for _ in range(depth)
+        ])
+        self.bn_layers = nn.ModuleList([
+            nn.ModuleList([nn.BatchNorm2d(width) for _ in range(depth)])
+            for _ in range(num_levels)
+        ])
         self.act = Act
-
         self.conv_pred = Seperable_Conv2d(width, num_anchors * 4, bias=True)
-
 
     def forward(self, features):
         out = []
@@ -109,7 +109,6 @@ class Regressor(nn.Module):
         return out
 
 
-
 class EfficientDet_Head(nn.Module):
 
     def __init__(self,
@@ -123,16 +122,16 @@ class EfficientDet_Head(nn.Module):
                  ):
 
         super().__init__()
-
+        
         self.classifier = Classifier(num_levels, depth, width, num_anchors, num_classes, Act, background_class=background_class)
         self.regressor = Regressor(num_levels, depth, width, num_anchors, Act)
-
 
     def forward(self, features):
         reg_out = self.regressor(features)
         cls_out = self.classifier(features)
         out = torch.cat((reg_out, cls_out), dim=2)
         return out
+
 
 class ClipDet_Head(nn.Module):
     """
@@ -151,18 +150,32 @@ class ClipDet_Head(nn.Module):
                  ):
         super().__init__()
 
+        self.num_anchors = num_anchors
+        self.embed_size = embed_size
+        
         self.classifier = Classifier(
             num_levels, depth, width, num_anchors, 2, 
-            Act, background_class=background_class)
+            Act, background_class=background_class
+        )
         self.encoder = Classifier(
             num_levels, depth, width, num_anchors, embed_size, Act, 
-            output_prob=False, background_class=False)
+            output_prob=False, background_class=False
+        )
         self.regressor = Regressor(num_levels, depth, width, num_anchors, Act)
 
-
-    def forward(self, features):
+    def forward(self, features, flatten_emb=True):
         reg_out = self.regressor(features)
-        emb_out = self.encoder(features)
+        emb_out = self.encoder(features, flatten=flatten_emb)
         cls_out = self.classifier(features)
-        out = torch.cat((reg_out, cls_out, emb_out), dim=2)
-        return out
+        
+        if flatten_emb:
+            out = torch.cat((reg_out, cls_out, emb_out), dim=2)
+            return out
+        else:
+            out = torch.cat((reg_out, cls_out), dim=2)
+            mean_anchor_emb = []
+            for emb in emb_out:
+                b, n, h, w = emb.shape
+                emb = emb.view([b, self.num_anchors, self.embed_size, h, w])
+                mean_anchor_emb.append(emb.mean(dim=1))
+            return out, mean_anchor_emb

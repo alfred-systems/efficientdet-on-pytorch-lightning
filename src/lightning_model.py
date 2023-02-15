@@ -302,7 +302,10 @@ class Laion400m_EfficientDet(COCO_EfficientDet):
     """
 
     def configure_model(self):
-        model = ClipDet(self.coeff)
+        model = ClipDet(
+            self.coeff,
+            background_class=self.background_class,
+            freeze_backbone=self.freeze_backbone)
 
         if not self.pretrained_backbone:
             raise RuntimeError('not suposse to use this option')
@@ -324,8 +327,10 @@ class Laion400m_EfficientDet(COCO_EfficientDet):
         preds, anchors, global_avgs = self.model(inputs, detect=False, global_feat=True)
         
         losses = []
-        for layer_global_avg in global_avgs:
-            losses.append(clip_loss(layer_global_avg, labels))
+        for i, layer_global_avg in enumerate(global_avgs):
+            layer_loss = clip_loss(layer_global_avg, labels)
+            losses.append(layer_loss)
+            self.log(f'gap_train_loss_{i}', layer_loss.mean())
         loss = sum(losses).mean()
         self.log('train_loss', loss)
         return loss

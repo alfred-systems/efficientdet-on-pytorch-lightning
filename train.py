@@ -40,9 +40,14 @@ def train(config_name=None, **kwargs):
         
         # lightning model
         pl_module = pl_modules[cfg.trainer.Task.pl_module]
-        pl_model = pl_module(**cfg.model.model, **cfg.model.loss, **cfg.model.nms, **cfg.model.optimizer,
-                                    val_annFile=cfg.dataset.val.annFile, 
-                                    background_class=use_background_class, freeze_backbone=freeze_backbone)
+        pl_model = pl_module(
+            **cfg.model.model,
+            **cfg.model.loss,
+            **cfg.model.nms,
+            **cfg.model.optimizer,
+            val_annFile=cfg.dataset.val.annFile, 
+            background_class=use_background_class,
+            freeze_backbone=freeze_backbone)
         # augmentor
         augmentor = default_augmentor(pl_model.model.img_size)
 
