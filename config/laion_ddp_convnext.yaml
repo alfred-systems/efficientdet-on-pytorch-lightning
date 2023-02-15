@@ -4,7 +4,7 @@ defaults:
   - _self_
 
 freeze_backbone: True
-batch_size: 16
+batch_size: 48
 num_workers: 2
 ckpt_path: 
 
@@ -13,7 +13,7 @@ trainer:
     pl_module: Laion400m_EfficientDet
 
   Trainer:
-    accumulate_grad_batches: 2
+    accumulate_grad_batches: 1
     # strategy: ddp
     sync_batchnorm: true
 
