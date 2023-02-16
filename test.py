@@ -92,7 +92,29 @@ def inferece():
 
 def dataset_warmup():
     from src.dataset.train_dataset import Laion400M, VisualGenome
-    dataset = Laion400M("/home/ron_zhu/laion-400m/train_data", None)
+    from src.dataset.bbox_augmentor import default_augmentor
+    dataset = Laion400M("/home/ron_zhu/laion-400m/train_data", default_augmentor(384))
+
+    import torch
+    import open_clip
+    from src.loss.focal_loss import clip_loss
+    model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(
+        Laion400M.MODEL, pretrained='laion2B-s13B-b82K')
+    tokenizer = open_clip.get_tokenizer(Laion400M.MODEL)
+    # model = model.to('cuda')
+
+    image, txt_emb = [], []
+    for i in range(16):
+        img, txt = dataset[i]
+        image.append(img)
+        txt_emb.append(txt)
+    image = torch.stack(image, dim=0)
+    txt_emb = torch.stack(txt_emb, dim=0)
+    img_emb = model.encode_image(image)
+    loss = clip_loss(img_emb, txt_emb)  # mean ~= 2.7
+    print(loss)
+    breakpoint()
+    return 
 
     
 if __name__ == "__main__":

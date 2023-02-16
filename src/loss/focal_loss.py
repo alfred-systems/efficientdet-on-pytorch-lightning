@@ -41,9 +41,9 @@ def new_focal_loss(logits, targets, alpha: float, gamma: float, normalizer, labe
     return element_wise_loss.sum()
 
 
-def clip_loss(image_embeddings, text_embeddings, temperature=1.0):
-    image_embeddings = F.normalize(image_embeddings, dim=1)
-    text_embeddings = F.normalize(text_embeddings, dim=1)
+def clip_loss(image_embeddings, text_embeddings, temperature=20.0):
+    # image_embeddings = F.normalize(image_embeddings, dim=1)
+    # text_embeddings = F.normalize(text_embeddings, dim=1)
 
     logits = (text_embeddings @ image_embeddings.T) / temperature
     images_similarity = image_embeddings @ image_embeddings.T
@@ -51,9 +51,11 @@ def clip_loss(image_embeddings, text_embeddings, temperature=1.0):
     targets = F.softmax(
         (images_similarity + texts_similarity) / 2 * temperature, dim=-1
     )
-    images_loss = (-targets.T * F.log_softmax(logits.T)).sum(1)
-    texts_loss = (-targets * F.log_softmax(logits)).sum(1)
-    return (images_loss + texts_loss) / 2.0
+    # breakpoint()
+    images_loss = (-targets.T * F.log_softmax(logits.T, dim=-1)).sum(1)
+    # texts_loss = (-targets * F.log_softmax(logits, dim=-1)).sum(1)
+    # return (images_loss + texts_loss) / 2.0
+    return images_loss
 
 
 class FocalL1_Loss(nn.Module):
@@ -280,8 +282,8 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         back_emb = anchor_emb[back_idx]
         back_emb = back_emb[torch.randperm(num_neg_samples)]
 
-        fore_emb = F.normalize(fore_emb, dim=1)
-        back_emb = F.normalize(back_emb, dim=1)
+        # fore_emb = F.normalize(fore_emb, dim=1)
+        # back_emb = F.normalize(back_emb, dim=1)
 
         fore_img_similarity = fore_emb @ fore_emb.T
         fore_txt_similarity = fore_label_emb @ fore_label_emb.T

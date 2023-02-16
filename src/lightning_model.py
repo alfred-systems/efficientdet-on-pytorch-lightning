@@ -323,12 +323,12 @@ class Laion400m_EfficientDet(COCO_EfficientDet):
         return model
     
     def training_step(self, batch, batch_idx):
-        inputs, labels = batch
+        inputs, txt_embed = batch
         preds, anchors, global_avgs = self.model(inputs, detect=False, global_feat=True)
         
         losses = []
         for i, layer_global_avg in enumerate(global_avgs):
-            layer_loss = clip_loss(layer_global_avg, labels)
+            layer_loss = clip_loss(layer_global_avg, txt_embed)
             losses.append(layer_loss)
             self.log(f'gap_train_loss_{i}', layer_loss.mean())
         loss = sum(losses).mean()
@@ -336,12 +336,12 @@ class Laion400m_EfficientDet(COCO_EfficientDet):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        inputs, labels = batch
+        inputs, txt_embed = batch
         preds, anchors, global_avgs = self.model(inputs, detect=False, global_feat=True)
         
         losses = []
         for layer_global_avg in global_avgs:
-            losses.append(clip_loss(layer_global_avg, labels))
+            losses.append(clip_loss(layer_global_avg, txt_embed))
         loss = sum(losses)
         return loss
 
