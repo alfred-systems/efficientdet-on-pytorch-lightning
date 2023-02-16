@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+from loguru import logger
 
 sys.path.append(os.path.dirname(os.path.abspath('./src')))
 # from src.__init__ import *
@@ -40,16 +41,23 @@ def dataset_sanity():
     import matplotlib.pyplot as plt
     # from src.dataset.val_dataset import COCO_Detection
     from src.dataset.val_dataset import Validate_Detection
-    # from src.dataset.bbox_augmentor import debug_augmentor
+    from src.dataset.bbox_augmentor import debug_augmentor
+    from src.dataset.train_dataset import Laion400M, VisualGenome
+
     # augmentor = debug_augmentor(512)
     # dataset = COCO_Detection(
     #     "/home/ron/Downloads/mscoco/train2017", 
     #     "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_train2017.json",
     #     augmentor)
-    dataset = Validate_Detection(
-        "/home/ron/Downloads/mscoco/val2017", 
-        "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_val2017.json",
-        512)
+    # dataset = Validate_Detection(
+    #     "/home/ron/Downloads/mscoco/val2017", 
+    #     "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_val2017.json",
+    #     512)
+    dataset = VisualGenome(
+        "/home/ron_zhu/visual_genome/VG_100K", 
+        "/home/ron_zhu/visual_genome/region_descriptions.json", 
+        debug_augmentor(384),
+    )
     test_loader = DataLoader(dataset, batch_size=2)
 
     for batch in test_loader:
@@ -89,36 +97,46 @@ def inferece():
         print(predict.shape)
     # print(pl_model)
 
-
+@logger.catch
 def dataset_warmup():
     from src.dataset.train_dataset import Laion400M, VisualGenome
-    from src.dataset.bbox_augmentor import default_augmentor
-    dataset = Laion400M("/home/ron_zhu/laion-400m/train_data", default_augmentor(384))
+    from src.dataset.bbox_augmentor import debug_augmentor
+    dataset = VisualGenome(
+        "/home/ron_zhu/visual_genome/VG_100K", 
+        "/home/ron_zhu/visual_genome/region_descriptions.json", 
+        debug_augmentor(384),
+    )
+    return
 
-    import torch
-    import open_clip
-    from src.loss.focal_loss import clip_loss
-    model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(
-        Laion400M.MODEL, pretrained='laion2B-s13B-b82K')
-    tokenizer = open_clip.get_tokenizer(Laion400M.MODEL)
-    # model = model.to('cuda')
+    # dataset = Laion400M("/home/ron_zhu/laion-400m/train_data", debug_augmentor(384))
+    
+    # import torch
+    # import open_clip
+    # from src.loss.focal_loss import clip_loss
+    # from PIL import Image
 
-    image, txt_emb = [], []
-    for i in range(16):
-        img, txt = dataset[i]
-        image.append(img)
-        txt_emb.append(txt)
-    image = torch.stack(image, dim=0)
-    txt_emb = torch.stack(txt_emb, dim=0)
-    img_emb = model.encode_image(image)
-    loss = clip_loss(img_emb, txt_emb)  # mean ~= 2.7
-    print(loss)
-    breakpoint()
-    return 
+    # model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(
+    #     Laion400M.MODEL, pretrained='laion2B-s13B-b82K')
+    # tokenizer = open_clip.get_tokenizer(Laion400M.MODEL)
+    # # model = model.to('cuda')
+
+    # image, txt_emb = [], []
+    # for i in range(16):
+    #     img, txt = dataset[i]
+    #     img = Image.fromarray(img.permute(1, 2, 0).numpy())
+    #     image.append(preprocess_val(img))
+    #     txt_emb.append(txt)
+    # image = torch.stack(image, dim=0)
+    # txt_emb = torch.stack(txt_emb, dim=0)
+    # img_emb = model.encode_image(image)
+    # loss = clip_loss(img_emb, txt_emb)  # mean ~= 2.7
+    # print(loss)
+    # breakpoint()
+    # return 
 
     
 if __name__ == "__main__":
     # test()
     # inferece()
-    # dataset_sanity()
-    dataset_warmup()
+    dataset_sanity()
+    # dataset_warmup()

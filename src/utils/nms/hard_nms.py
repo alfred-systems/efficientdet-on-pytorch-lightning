@@ -16,7 +16,7 @@ class Hard_NMS:
         self.bbox_format = bbox_format
 
 
-    def __call__(self, preds: Tensor) -> List[Tensor]:
+    def __call__(self, preds: Tensor, pred_meta=None) -> Union[List[Tensor], Tuple[List[Tensor]]]:
         bbox_preds = preds[..., :4]
         cls_preds = preds[..., 4:]
         scores, obj_classes = torch.max(cls_preds, dim=2)
@@ -30,8 +30,9 @@ class Hard_NMS:
 
         pre_out = zip(bbox_preds, scores, obj_classes)
         out = []
+        out_meta = []
 
-        for pre_bbox, pre_score, pre_class in pre_out:
+        for i, (pre_bbox, pre_score, pre_class) in enumerate(pre_out):
             if softmax:
                 mask = pre_class < num_class - 1  # filter out background bbox
                 pre_bbox = pre_bbox[mask]
@@ -52,7 +53,14 @@ class Hard_NMS:
             nms_pred = torch.cat((nms_bbox, nms_score.view((-1, 1)), nms_class.view((-1, 1)).float()), dim=1)
             out.append(nms_pred)
 
-        return out
+            if pred_meta:
+                nms_meta = pred_meta[i][idx_selected]
+                out_meta.append(nms_meta)
+
+        if pred_meta:
+            out, out_meta
+        else:
+            return out
 
 
 

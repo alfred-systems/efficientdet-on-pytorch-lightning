@@ -18,7 +18,7 @@ def download_urls(urls, output_dir):
         output_path = os.path.join(output_dir, f'{i}.jpg')
         if os.path.exists(output_path):
             continue
-        for _ in range(3):
+        for _ in range(2):
             try:
                 r = rq.get(url, stream=True)
                 if r.status_code == 200:
@@ -28,10 +28,9 @@ def download_urls(urls, output_dir):
                     sucess_list.append({'seq_id': i, 'sample_id': id})
                 break
             except rq.exceptions.ConnectionError:
-                pass
-            if _ == 2:
+                time.sleep(random.random() * 2)
+            if _ == 1:
                 print(f'Fail to down load [{i}]{url}')
-        time.sleep(random.random() * 2)
     return sucess_list
         
 

@@ -1,4 +1,5 @@
 from src.model.utils import *
+from loguru import logger
 
 
 class Classifier(nn.Module):
@@ -152,10 +153,13 @@ class ClipDet_Head(nn.Module):
 
         self.num_anchors = num_anchors
         self.embed_size = embed_size
+
+        if background_class:
+            logger.warning("ClipDet_Head will alway using sigmoid activation, hence ignore background_class parameter.")
         
         self.classifier = Classifier(
-            num_levels, depth, width, num_anchors, 2, 
-            Act, background_class=background_class
+            num_levels, depth, width, num_anchors, 1, 
+            Act, background_class=False
         )
         self.encoder = Classifier(
             num_levels, depth, width, num_anchors, embed_size, Act, 

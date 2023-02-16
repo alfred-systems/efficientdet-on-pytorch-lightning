@@ -117,14 +117,12 @@ class COCO_EfficientDet(pl.LightningModule):
 
         return model
 
-
     def configure_loss_function(self):
         return FocalL1_Loss(self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
                           self.fore_mean, self.reg_weight, self.average, 'cxcywh')
 
     def configure_nms(self):
         return Hard_NMS(self.iou_th, self.max_det, 'cxcywh')
-
 
     def configure_optimizers(self):
         optimizer = AdamW([
@@ -138,7 +136,6 @@ class COCO_EfficientDet(pl.LightningModule):
 
         return {"optimizer": optimizer,
                 "lr_scheduler": {"scheduler": scheduler, "monitor": 'train_loss'}}
-
 
     @classmethod
     def initialize_weight(cls, model):
@@ -168,52 +165,44 @@ class COCO_EfficientDet(pl.LightningModule):
         self.log('train_reg_loss', reg_loss)
 
         return loss
-
-    def validation_step(self, batch, batch_idx):
-        ids, inputs, scales, pads = batch[:4]
-        extra = batch[4]
-        preds, _ = self.model(inputs, detect=True)
-        device = preds.device
-        batch_size = preds.size(0)
-        preds = self.nms(preds)
-
-        # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
-        sample_range = (batch_idx * batch_size, (batch_idx + 1) * batch_size)
-        plot =  (
-            sample_range[0] <= self.plot_freq * sample_range[0] // self.plot_freq <= sample_range[1] 
-            and hasattr(self.logger, 'log_image')
-        )
+    
+    def plt_wandb_bbox(self, preds: torch.Tensor, images: List[np.ndarray]):
         batch_boxes = []
-        metrix_pred = []
-        metrix_tar = []
         
-        for i, (scale, pad) in enumerate(zip(scales, pads)):
+        for i in range(len(preds)):
             preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
             
-            if plot:
-                json_boxes = []
-                pred_pt = preds[i].cpu().numpy()
-                box_pt = pred_pt[..., :4].astype(np.int32).tolist()
-                for box, pred in zip(box_pt, pred_pt):
-                    score = pred[4]
-                    cls = int(pred[5])
-                    
-                    if score < 0.2: continue
-                    json_boxes.append({
-                        "position" : {
-                            "minX" : box[0],
-                            "maxX" : box[0] + box[2],
-                            "minY" : box[1],
-                            "maxY" : box[1] + box[3],
-                        },
-                        "class_id" : cls + 1,  # NOTE: detector don't have background class, so all class ids is shifted forward by 1
-                        # optionally caption each box with its class and score
-                        # "box_caption" : "%s (%.3f)" % (v_labels[b_i], v_scores[b_i]),
-                        "domain" : "pixel",
-                        "scores" : { "score" : int(100 * score) }
-                    })
-                batch_boxes.append({"predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME}})
-            
+            json_boxes = []
+            pred_pt = preds[i].cpu().numpy()
+            box_pt = pred_pt[..., :4].astype(np.int32).tolist()
+            for box, pred in zip(box_pt, pred_pt):
+                score = pred[4]
+                cls = int(pred[5])
+                
+                if score < 0.2: continue
+                json_boxes.append({
+                    "position" : {
+                        "minX" : box[0],
+                        "maxX" : box[0] + box[2],
+                        "minY" : box[1],
+                        "maxY" : box[1] + box[3],
+                    },
+                    "class_id" : cls + 1,  # NOTE: detector don't have background class, so all class ids is shifted forward by 1
+                    # optionally caption each box with its class and score
+                    # "box_caption" : "%s (%.3f)" % (v_labels[b_i], v_scores[b_i]),
+                    "domain" : "pixel",
+                    "scores" : { "score" : int(100 * score) }
+                })
+            batch_boxes.append({"predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME}})
+        
+        self.logger.log_image(key="validation-step-detect", images=images, step=self.global_step, boxes=batch_boxes)
+    
+    def update_mean_ap(self, preds, scales, pads):
+        metrix_pred = []
+        metrix_tar = []
+
+        for i, (scale, pad) in enumerate(zip(scales, pads)):
+            preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
             preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
             
             pred_pt = preds[i]
@@ -234,14 +223,29 @@ class COCO_EfficientDet(pl.LightningModule):
                 'boxes': boxes,
                 'labels': labels,
             })
-            
+
         self.val_map.update(preds=metrix_pred, target=metrix_tar)
 
-        if plot:
-            # images = [e['image_numpy'] for e in extra]
-            images = [img for img in extra['image_numpy'].cpu().numpy()]
-            self.logger.log_image(key="validation-step-detect", images=images, step=self.global_step, boxes=batch_boxes)
+    def validation_step(self, batch, batch_idx):
+        ids, inputs, scales, pads = batch[:4]
+        extra = batch[4]
+        
+        preds, _ = self.model(inputs, detect=True)
+        device = preds.device
+        batch_size = preds.size(0)
+        preds = self.nms(preds)
 
+        # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
+        sample_range = (batch_idx * batch_size, (batch_idx + 1) * batch_size)
+        plot =  (
+            sample_range[0] <= self.plot_freq * sample_range[0] // self.plot_freq <= sample_range[1] 
+            and hasattr(self.logger, 'log_image')
+        )
+        if plot:
+            images = [img for img in extra['image_numpy'].cpu().numpy()]
+            self.plt_wandb_bbox(preds, images)
+        
+        self.update_mean_ap(preds, scales, pads)
         return ids, preds
 
 
@@ -388,4 +392,55 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
             fore_mean=self.fore_mean, reg_weight=self.reg_weight, average=self.average, bbox_format='cxcywh')
     
+    def validation_step(self, batch, batch_idx):
+        inputs, labels, scales, pads = batch[:4]
+        extra = batch[4]
+        
+        preds, _ = self.model(inputs, detect=True)
+        device = preds.device
+        batch_size = preds.size(0)
+        
+        gt_boxes = labels[:4]
+        gt_embed = labels[4:]
+        
+        pred_boxes = preds[4:]
+        pred_cls = preds[5:6]
+        pred_embed = preds[6:]
+        
+        postitive, scores, captions = self.query_anchors(pred_embed, gt_embed)
+        pred_boxes = pred_boxes[postitive]
+        pred_cls = pred_cls[postitive]
+        
+        nms_preds, nms_captions = self.nms(torch.cat([pred_boxes, scores], dim=-1), pred_meta=captions)
+        region_captions: List[List[str]] = extra['phrases']
+        nms_captions = [
+            [region_captions[i][j] for j in caps]
+            for i, caps in enumerate(nms_captions)
+        ]
+
+        self.update_mean_ap(nms_preds, scales, pads)
+
+    def query_anchors(self, pred: torch.Tensor, queries: torch.Tensor, similarity_th=.5):
+        positives = []
+        pos_similarity = []
+        match_captions = []
+        
+        for i, (pred_per_img, que_per_img) in enumerate(zip(pred, queries)):
+            pred_per_img = pred_per_img[torch.abs(pred_per_img.sum(-1)) > 1e-6]  # remove padding
+            que_per_img = que_per_img[torch.abs(que_per_img.sum(-1)) > 1e-6]
+            
+            similarity = pred_per_img @ que_per_img.T
+            max_score, indies = similarity.max(dim=-1)
+            positives.append(max_score > similarity_th)
+            pos_similarity.append(max_score[max_score > similarity_th])
+            
+            captions = indies[max_score > similarity_th]
+            match_captions.append(captions)
+        
+        return (
+            torch.stack(positives, dim=0), 
+            torch.stack(pos_similarity, dim=0), 
+            torch.stack(match_captions, dim=0)
+        )
+
     

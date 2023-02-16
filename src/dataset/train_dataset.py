@@ -192,6 +192,7 @@ class VisualGenome(VisionDataset):
     def __init__(self, img_dir: str, 
                  annFile: str = '', 
                  bbox_augmentor: Optional[Bbox_Augmentor]=None,
+                 split='train',
                  **kwargs):
         self.img_dir = img_dir
         with open(annFile, mode='r') as f:
@@ -202,6 +203,13 @@ class VisualGenome(VisionDataset):
         if not os.path.exists(self.cache_file):
             self._create_region_embed(self.cache_file)
         self.phrase_embed = torch.load(self.cache_file)
+        
+        n = len(self.region_anno)
+        if split == 'train':
+            self.region_anno = self.region_anno[:int(n * 0.9)]
+        else:
+            self.region_anno = self.region_anno[int(n * 0.9):]
+        self.split = split
     
     def _create_region_embed(self, cache_file: str):
         import open_clip
@@ -212,14 +220,16 @@ class VisualGenome(VisionDataset):
         
         embed_table = {}
         with torch.no_grad():
-            for i in range(len(self)):
-                for region in self.region_anno[i]:
+            m = len(self)
+            for i in range(m):
+                for region in self.region_anno[i]['regions']:
                     reg_id = region['region_id']
                     phrase = region['phrase']
                     input_ids = tokenizer(phrase)
-                    embed = model.encode_text(input_ids)
+                    embed = model.encode_text(input_ids.to('cuda'))
                     assert embed.ndim == 2 and embed.size(0) == 1
                     embed_table[reg_id] = embed.cpu()[0]
+                print(f"_create_region_embed {i}/{m}")
         
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         torch.save(embed_table, cache_file)
@@ -231,6 +241,7 @@ class VisualGenome(VisionDataset):
         meta = self.region_anno[index]
         img_id: int = meta['image_id']
         image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
+        h, w, c = image.shape
         
         if self.augmentor:
             category_ids = 0  # TODO: decide to make use of category label or not
@@ -240,24 +251,40 @@ class VisualGenome(VisionDataset):
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = np.transpose(image, (2, 0, 1))
             image = torch.from_numpy(image)
-        
+
         boxes = []
         phr_embed = []
+        phrases = []
         for region in meta['regions']:
             x: int = region['x']
             y: int = region['y']
             w: int = region['width']
             h: int = region['height']
-            # phrase: str = region['phrase']
+            phrase: str = region['phrase']
             reg_id: int = region['region_id']
 
+            phrases.append(phrase)
             phr_embed.append(self.phrase_embed[reg_id])
             boxes.append([x, y, w, h])
         
         phr_embed = torch.stack(phr_embed)  # (n, 640)
         boxes = torch.tensor(boxes)  # (n, 4)
         labels = torch.cat([boxes, phr_embed], dim=-1)
-        return image, labels
+
+        if self.split == 'train':
+            return image, labels
+        else:
+            _h, _w, _ = image.shape
+            scale = _h / h
+            diff = np.abs(h - w)
+            p1 = diff // 2
+            p2 = diff - diff // 2
+            pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
+            pad = torch.tensor(pad)
+            extra = {
+                'phrases': phrases
+            }
+            return image, labels, scale, pad, extra
 
 
 class Laion400M(VisionDataset):

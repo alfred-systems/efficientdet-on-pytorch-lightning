@@ -61,7 +61,8 @@ def train(config_name=None, **kwargs):
             cfg.dataset.train.root,
             annFile=cfg.dataset.train.annFile,
             bbox_augmentor=augmentor,
-            background_class=use_background_class
+            background_class=use_background_class,
+            split='train',
         )
         val_set = pl_data[cfg.trainer.Task.pl_module][1](
             cfg.dataset.val.root,
@@ -69,6 +70,7 @@ def train(config_name=None, **kwargs):
             img_size=pl_model.model.img_size,
             dataset_stat=cfg.dataset.dataset_stat,
             bbox_augmentor=augmentor,
+            split='val',
         )
 
         train_loader = DataLoader(

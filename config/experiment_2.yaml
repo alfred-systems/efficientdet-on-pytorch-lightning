@@ -3,9 +3,9 @@ defaults:
   - dataset: COCO2017
   - trainer: default
 
-
+freeze_backbone: True
 batch_size: 16
-num_workers: 4
+num_workers: 2
 ckpt_path: 
 
 trainer:
