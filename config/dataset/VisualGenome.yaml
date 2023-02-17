@@ -1,0 +1,14 @@
+train:
+  root: /home/ron_zhu/visual_genome/VG_100K
+  annFile: /home/ron_zhu/visual_genome/region_descriptions.json
+
+val:
+  root: /home/ron_zhu/visual_genome/VG_100K
+  annFile: /home/ron_zhu/visual_genome/region_descriptions.json
+
+test:
+  root: 
+
+dataset_stat:
+  - [0.485, 0.456, 0.406]   # mean
+  - [0.229, 0.224, 0.225]   # std
