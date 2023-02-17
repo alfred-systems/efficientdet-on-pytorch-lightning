@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import torch
 from loguru import logger
 
 sys.path.append(os.path.dirname(os.path.abspath('./src')))
@@ -37,6 +38,7 @@ from torch.utils.data import DataLoader
 #         raise RuntimeError('no checkpoint is given')
 
 
+@logger.catch
 def dataset_sanity():
     import matplotlib.pyplot as plt
     # from src.dataset.val_dataset import COCO_Detection
@@ -57,14 +59,18 @@ def dataset_sanity():
         "/home/ron_zhu/visual_genome/VG_100K", 
         "/home/ron_zhu/visual_genome/region_descriptions.json", 
         debug_augmentor(384),
+        split='val'
     )
-    test_loader = DataLoader(dataset, batch_size=2)
+
+    # fp16 = {k: v.to(torch.float16) for k, v in dataset.phrase_embed.items()}
+    # torch.save(fp16, dataset.cache_file.replace(".pth", ".fp16.pth"))
+    test_loader = DataLoader(dataset, batch_size=4)
 
     for batch in test_loader:
         image = batch[0]
         extra = batch[-1]
         print(extra)
-        break
+        breakpoint()
     
     for i in range(10):
         image = dataset[i][0]

@@ -3,6 +3,8 @@ from src.utils.bbox import iou_one_to_many, convert_bbox
 from torchvision.ops import batched_nms
 
 
+Tensor2D = Union[List[Tensor], Tensor]
+
 
 class Hard_NMS:
 
@@ -27,7 +29,14 @@ class Hard_NMS:
 
         if self.bbox_format != 'xyxy':
             bbox_preds = convert_bbox(bbox_preds, self.bbox_format, 'xyxy')
+        
+        return self.nms(
+            bbox_preds, scores, obj_classes, num_class, 
+            pred_meta=pred_meta, softmax=softmax
+        )
 
+    def nms(self, bbox_preds: Tensor2D, scores: Tensor2D, obj_classes: Tensor2D, 
+            num_class: int, pred_meta=None, softmax=False):
         pre_out = zip(bbox_preds, scores, obj_classes)
         out = []
         out_meta = []
@@ -58,7 +67,7 @@ class Hard_NMS:
                 out_meta.append(nms_meta)
 
         if pred_meta:
-            out, out_meta
+            return out, out_meta
         else:
             return out
 

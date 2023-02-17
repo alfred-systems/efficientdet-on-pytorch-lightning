@@ -166,7 +166,7 @@ class COCO_EfficientDet(pl.LightningModule):
 
         return loss
     
-    def plt_wandb_bbox(self, preds: torch.Tensor, images: List[np.ndarray]):
+    def plt_wandb_bbox(self, preds: torch.Tensor, images: List[np.ndarray], box_captions: List[List[str]]=None):
         batch_boxes = []
         
         for i in range(len(preds)):
@@ -175,7 +175,7 @@ class COCO_EfficientDet(pl.LightningModule):
             json_boxes = []
             pred_pt = preds[i].cpu().numpy()
             box_pt = pred_pt[..., :4].astype(np.int32).tolist()
-            for box, pred in zip(box_pt, pred_pt):
+            for j, (box, pred) in enumerate(zip(box_pt, pred_pt)):
                 score = pred[4]
                 cls = int(pred[5])
                 
@@ -189,7 +189,7 @@ class COCO_EfficientDet(pl.LightningModule):
                     },
                     "class_id" : cls + 1,  # NOTE: detector don't have background class, so all class ids is shifted forward by 1
                     # optionally caption each box with its class and score
-                    # "box_caption" : "%s (%.3f)" % (v_labels[b_i], v_scores[b_i]),
+                    "box_caption" : box_captions[i][j] if box_captions else None,
                     "domain" : "pixel",
                     "scores" : { "score" : int(100 * score) }
                 })
@@ -197,7 +197,7 @@ class COCO_EfficientDet(pl.LightningModule):
         
         self.logger.log_image(key="validation-step-detect", images=images, step=self.global_step, boxes=batch_boxes)
     
-    def update_mean_ap(self, preds, scales, pads):
+    def update_mean_ap(self, preds, scales, pads, extra):
         metrix_pred = []
         metrix_tar = []
 
@@ -245,7 +245,7 @@ class COCO_EfficientDet(pl.LightningModule):
             images = [img for img in extra['image_numpy'].cpu().numpy()]
             self.plt_wandb_bbox(preds, images)
         
-        self.update_mean_ap(preds, scales, pads)
+        self.update_mean_ap(preds, scales, pads, extra)
         return ids, preds
 
 
@@ -400,25 +400,50 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
         device = preds.device
         batch_size = preds.size(0)
         
-        gt_boxes = labels[:4]
-        gt_embed = labels[4:]
+        gt_boxes = labels[..., :4]
+        gt_embed = labels[..., 4:]
         
-        pred_boxes = preds[4:]
-        pred_cls = preds[5:6]
-        pred_embed = preds[6:]
+        pred_boxes = preds[..., :4]
+        pred_cls = preds[..., 4:5]
+        pred_embed = preds[..., 5:]
         
         postitive, scores, captions = self.query_anchors(pred_embed, gt_embed)
-        pred_boxes = pred_boxes[postitive]
-        pred_cls = pred_cls[postitive]
+        pred_boxes = [b[p] for b, p in zip(pred_boxes, postitive)]
+        pred_cls = [c[p] for c, p in zip(pred_cls, postitive)]
+        dummy_class_id = [torch.zeros([len(c)], device=device).long() for c in pred_cls]
         
-        nms_preds, nms_captions = self.nms(torch.cat([pred_boxes, scores], dim=-1), pred_meta=captions)
-        region_captions: List[List[str]] = extra['phrases']
+        # nms_preds, nms_captions = self.nms(torch.cat([pred_boxes, scores], dim=-1), pred_meta=captions)
+        nms_preds, nms_captions = self.nms.nms(
+            pred_boxes, scores, dummy_class_id, 
+            num_class=1, pred_meta=captions, softmax=False
+        )
+        region_captions: List[str] = extra['phrases']
+        region_captions = [join_cap.split('&&') for join_cap in region_captions]
         nms_captions = [
             [region_captions[i][j] for j in caps]
             for i, caps in enumerate(nms_captions)
         ]
+        tmp = {
+                'boxes': gt_boxes, # with -1 padding
+                'labels': (gt_boxes.sum(-1) >= 0).long() - 1,
+            }
 
-        self.update_mean_ap(nms_preds, scales, pads)
+        self.update_mean_ap(
+            nms_preds, 
+            torch.ones_like(scales), 
+            torch.zeros_like(pads), 
+            tmp, 
+        )
+
+        if batch_idx < 3 and hasattr(self.logger, 'log_image'):
+            np_imgs = [img.cpu().numpy() for img in extra['image_numpy']]
+            self.plt_wandb_bbox(nms_preds, np_imgs, box_captions=nms_captions)
+    
+    def validation_epoch_end(self, val_step):
+        for k, v in self.val_map.compute().items():
+            self.log(f'val_{k}', v, sync_dist=True)
+            logger.info(f'{k}: {v}')
+        self.val_map.reset()
 
     def query_anchors(self, pred: torch.Tensor, queries: torch.Tensor, similarity_th=.5):
         positives = []
@@ -426,8 +451,8 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
         match_captions = []
         
         for i, (pred_per_img, que_per_img) in enumerate(zip(pred, queries)):
-            pred_per_img = pred_per_img[torch.abs(pred_per_img.sum(-1)) > 1e-6]  # remove padding
-            que_per_img = que_per_img[torch.abs(que_per_img.sum(-1)) > 1e-6]
+            # pred_per_img = pred_per_img[torch.abs(pred_per_img.sum(-1)) > 1e-6]  
+            que_per_img = que_per_img[torch.abs(que_per_img.sum(-1)) > 1e-6]  # remove padding
             
             similarity = pred_per_img @ que_per_img.T
             max_score, indies = similarity.max(dim=-1)
@@ -438,9 +463,9 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             match_captions.append(captions)
         
         return (
-            torch.stack(positives, dim=0), 
-            torch.stack(pos_similarity, dim=0), 
-            torch.stack(match_captions, dim=0)
+            positives,
+            pos_similarity,
+            match_captions,
         )
 
     

@@ -6,6 +6,8 @@ from src.dataset.utils import *
 from src.dataset.bbox_augmentor import Bbox_Augmentor
 from pycocotools.coco import COCO
 from torchvision.datasets.vision import VisionDataset
+from loguru import logger
+from collections import defaultdict
 
 
 CLASS_TABLE = {
@@ -194,22 +196,37 @@ class VisualGenome(VisionDataset):
                  bbox_augmentor: Optional[Bbox_Augmentor]=None,
                  split='train',
                  **kwargs):
+        assert os.path.exists(img_dir)
+        
         self.img_dir = img_dir
         with open(annFile, mode='r') as f:
             self.region_anno = json.load(f)
         self.augmentor = bbox_augmentor
         
-        self.cache_file = os.path.join(img_dir, "embed_cache.pth")
-        if not os.path.exists(self.cache_file):
-            self._create_region_embed(self.cache_file)
-        self.phrase_embed = torch.load(self.cache_file)
+        self.cache_file = os.path.join(img_dir, "embed_cache.fp16.pth")
         
         n = len(self.region_anno)
         if split == 'train':
             self.region_anno = self.region_anno[:int(n * 0.9)]
         else:
             self.region_anno = self.region_anno[int(n * 0.9):]
+            self.augmentor.with_np_image = True
         self.split = split
+        self.max_det = 300  # NOTE: VG have max 267/ min 3/ avg 50 regions per image
+    
+    @property
+    def phrase_embed(self):
+        """
+        HACK: lazy loading to avoid multiprocess pickle on after __init__
+        """
+        if not hasattr(self, '_phrase_embed'):
+            if not os.path.exists(self.cache_file):
+                logger.info(f"Generate VisualGenome region description text embedding: {self.cache_file}")
+                self._create_region_embed(self.cache_file)
+            # logger.info(f"Loading VisualGenome region description embedding cache: {self.cache_file}")
+            # self.phrase_embed: Dict[int, Tensor] = torch.load(self.cache_file)
+            self._phrase_embed: Dict[int, Tensor] = defaultdict(lambda: torch.ones([640]).float())
+        return self._phrase_embed
     
     def _create_region_embed(self, cache_file: str):
         import open_clip
@@ -239,20 +256,10 @@ class VisualGenome(VisionDataset):
     
     def __getitem__(self, index: int):
         meta = self.region_anno[index]
-        img_id: int = meta['image_id']
-        image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
-        h, w, c = image.shape
-        
-        if self.augmentor:
-            category_ids = 0  # TODO: decide to make use of category label or not
-            transform = self.augmentor(image, bboxes, category_ids)
-            image, bboxes, category_ids = transform.values()
-        else:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = np.transpose(image, (2, 0, 1))
-            image = torch.from_numpy(image)
+        img_id: int = meta['id']
+        np_image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
 
-        boxes = []
+        bboxes = []
         phr_embed = []
         phrases = []
         for region in meta['regions']:
@@ -264,17 +271,33 @@ class VisualGenome(VisionDataset):
             reg_id: int = region['region_id']
 
             phrases.append(phrase)
-            phr_embed.append(self.phrase_embed[reg_id])
-            boxes.append([x, y, w, h])
+            phr_embed.append(self.phrase_embed[reg_id].to(torch.float32))
+            bboxes.append([x, y, w, h])
+        
+        if self.augmentor:
+            category_ids = [0] * len(bboxes)  # TODO: decide to make use of category label or not
+            # HACK: we use category_ids's slot to place bbox embedding, so we only keep embeds that still inside the image after augmentation
+            transform = self.augmentor(np_image, bboxes, phr_embed)  
+            image, bboxes, phr_embed = transform['image'], transform['bboxes'], transform['category_ids']
+        else:
+            image = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
+            image = np.transpose(image, (2, 0, 1))
+            image = torch.from_numpy(image)
+        
+        for _ in range(len(bboxes), self.max_det):
+            bboxes.append([-1, -1, -1, -1])
+            phr_embed.append(torch.zeros_like(phr_embed[0]))
         
         phr_embed = torch.stack(phr_embed)  # (n, 640)
-        boxes = torch.tensor(boxes)  # (n, 4)
-        labels = torch.cat([boxes, phr_embed], dim=-1)
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)  # (n, 4)
+        labels = torch.cat([bboxes, phr_embed], dim=-1)
 
         if self.split == 'train':
             return image, labels
         else:
+            h, w, c = np_image.shape
             _h, _w, _ = image.shape
+
             scale = _h / h
             diff = np.abs(h - w)
             p1 = diff // 2
@@ -282,7 +305,8 @@ class VisualGenome(VisionDataset):
             pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
             pad = torch.tensor(pad)
             extra = {
-                'phrases': phrases
+                'phrases': '&&'.join(phrases),
+                'image_numpy': transform['image_numpy'],
             }
             return image, labels, scale, pad, extra
 
