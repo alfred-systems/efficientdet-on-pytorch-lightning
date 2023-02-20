@@ -3,6 +3,18 @@ from src.model.anchor import Anchor_Assigner
 from loguru import logger
 
 
+def float_args(func):
+
+    def wrap(*args, **kwargs):
+        args = [
+            a.float() if isinstance(a, Tensor) and a.dtype == torch.float16 else a
+            for a in args
+        ]
+        return func(*args, **kwargs)
+
+    return wrap
+
+
 def new_focal_loss(logits, targets, alpha: float, gamma: float, normalizer, label_smoothing: float = 0.01):
     """Compute the focal loss between `logits` and the golden `target` values.
     'New' is not the best descriptor, but this focal loss impl matches recent versions of
@@ -100,8 +112,9 @@ class FocalL1_Loss(nn.Module):
         self._accept_softmax = v
 
     @staticmethod
+    @float_args
     def focal_loss(cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
-
+        cls_pred = cls_pred.clamp(min=1e-4, max=1 - 1e-4)
         fore_pred = cls_pred[fore_idx]
         back_pred = cls_pred[back_idx]
 
@@ -119,6 +132,7 @@ class FocalL1_Loss(nn.Module):
 
         floss = torch.sum(fore_loss)
         bloss = torch.sum(back_loss)
+        # breakpoint()
         # cap = torch.max(floss * 10, torch.ones_like(floss) * 100)
         # loss = floss + bloss.clamp(max=cap)
         loss = floss + bloss
@@ -129,6 +143,7 @@ class FocalL1_Loss(nn.Module):
         return loss
     
     @staticmethod
+    @float_args
     def focal_smax_loss(cls_pred, fore_idx, back_idx, fore_label_cls, alpha, gamma, mean):
 
         fore_pred = cls_pred[fore_idx]
@@ -158,8 +173,8 @@ class FocalL1_Loss(nn.Module):
 
         return loss
 
-
     @staticmethod
+    @float_args
     def smooothL1_loss(reg_pred, anchors, fore_idx, fore_label_bbox, beta, mean):
         fore_pred = reg_pred[fore_idx]
         fore_anchor = anchors.squeeze()[fore_idx]
@@ -180,7 +195,6 @@ class FocalL1_Loss(nn.Module):
             loss = loss / num if num > 0 else loss
 
         return loss
-
 
     def forward(self,
                 preds: Tensor,
@@ -266,9 +280,13 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         self.temperature = temperature
     
     @staticmethod
-    def sample_fore_background_boxes(anchor_emb, fore_idx, back_idx, fore_label_emb, num_neg_samples=200):
+    def sample_fore_background_boxes(anchor_emb, fore_idx, back_idx, fore_label_emb, 
+                                    num_pos_samples=500, num_neg_samples=500):
         fore_emb = anchor_emb[fore_idx]
         back_emb = anchor_emb[back_idx]
+        sampled_fore_idx = torch.randperm(min(fore_idx.size(0), num_pos_samples))
+        fore_emb = fore_emb[sampled_fore_idx]
+        fore_label_emb = fore_label_emb[sampled_fore_idx]
         back_emb = back_emb[torch.randperm(num_neg_samples)]
         return fore_emb, fore_label_emb, back_emb
     
@@ -310,7 +328,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         return fore_loss + back_loss
     
     @staticmethod
-    def contrastive_loss_v2(fore_emb, back_emb, fore_label_emb, temperature=20.0):
+    def contrastive_loss_v2(fore_emb, fore_label_emb, back_emb, temperature=20.0):
         """
         fore_emb: embedding of foreground anchor boxes (N, 640)
         back_emb: embedding of background anchor boxes (batch_size * M, 640)
@@ -325,16 +343,22 @@ class ContrastiveL1_Loss(FocalL1_Loss):
             (fore_img_similarity + fore_txt_similarity) / 2 * temperature, dim=-1
         )
         logits = (fore_label_emb @ fore_emb.T) / temperature
-        fore_loss = (-fore_targets.T * F.log_softmax(logits.T, dim=-1)).sum(1)
+
+        # NOTE: convert back to full precsion before reduce sum to avoid overflow
+        fore_targets = fore_targets.float()
+        logits = logits.float()
+        fore_loss = (-fore_targets.T * F.log_softmax(logits.T, dim=-1)).sum()
         
         f2b_emb = torch.cat([fore_emb, back_emb], dim=0)
         f2b_similarity = f2b_emb @ f2b_emb.T
-        f2b_target = F.softmax(f2b_similarity * temperature, dim=-1)
+        f2b_target = F.softmax((f2b_similarity * temperature).float(), dim=-1)
         back_loss = -f2b_target.T * F.log_softmax((f2b_similarity / temperature).T, dim=-1)
         back_loss[:len(fore_emb), :len(fore_emb)] = 0.0  # NOTE: remove the part that is duplicated with fore_loss
-        back_loss = back_loss.sum(1)
+        back_loss = back_loss.sum()
         
-        return (fore_loss + back_loss) / fore_emb.size(0)
+        loss =  (fore_loss + back_loss) / fore_emb.size(0)
+        # print(fore_loss, back_loss, loss)
+        return loss
 
     def forward(self,
                 preds: Tensor,
@@ -367,9 +391,9 @@ class ContrastiveL1_Loss(FocalL1_Loss):
 
             fore_label_emb = assign['foreground'][1][..., 4:]
             fore_label_bbox = assign['foreground'][1][..., :4]
-            fore_label = torch.ones_like(cls_preds)
+            fore_label = torch.ones_like(cls_preds[i])[fore_idx]  # one-hot labels for anchors
 
-            cls_losses.append(self.focal_smax_loss(cls_preds[i], fore_idx, back_idx, fore_label, self.alpha, self.gamma, self.fore_mean))
+            cls_losses.append(self.focal_loss(cls_preds[i], fore_idx, back_idx, fore_label, self.alpha, self.gamma, self.fore_mean))
             embed_tups.append(self.sample_fore_background_boxes(embed_preds[i], fore_idx, back_idx, fore_label_emb))
             reg_losses.append(self.smooothL1_loss(reg_preds[i], anchors, fore_idx, fore_label_bbox, self.beta, self.fore_mean))
 
@@ -391,4 +415,4 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         
         total_loss += emb_loss
 
-        return total_loss, cls_loss, reg_loss
+        return total_loss, cls_loss, reg_loss, emb_loss

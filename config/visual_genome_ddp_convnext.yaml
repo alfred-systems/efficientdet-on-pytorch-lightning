@@ -5,7 +5,7 @@ defaults:
 
 freeze_backbone: true
 use_background_class: false
-batch_size: 16
+batch_size: 12
 num_workers: 2
 ckpt_path: 
 
@@ -17,7 +17,9 @@ trainer:
     accumulate_grad_batches: 1
     # strategy: ddp
     sync_batchnorm: true
-    overfit_batches: 36
+    precision: 16
+    # overfit_batches: 36
+    limit_train_batches: 0.2
 
 model:
   model:
@@ -42,11 +44,11 @@ model:
 
 
 log:
-  name: laion-convnext
+  name: visual-genome-convnext
   project: COCO_EfficientDet
   save_dir: ./log
   artifact_type: find_lr
-  artifact_name: laion-convnext
+  artifact_name: visual-genome-convnext
   artifact_description: lr=0.0001 | scheduler=ReduceLROnPlateau | monitor=AP | ConvNeXt-Laion2B
   artifact_save_files:
     trainer: config/trainer/default.yaml

@@ -392,6 +392,22 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             self.fore_th, self.back_th, self.alpha, self.gamma, self.beta,
             fore_mean=self.fore_mean, reg_weight=self.reg_weight, average=self.average, bbox_format='cxcywh')
     
+    def training_step(self, batch, batch_idx):
+        inputs, labels = batch
+        preds, anchors = self.model(inputs, detect=False)
+        sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
+        
+        sync_labels = sync_labels.to(preds.device)
+        anchors = anchors.to(preds.device)  # BUG: anchors is a Tensor, won't be auto move to correct device by DDP
+
+        loss, cls_loss, reg_loss, emb_loss  = self.loss(preds, anchors, sync_labels)
+        self.log('train_loss', loss)
+        self.log('train_cls_loss', cls_loss)
+        self.log('train_reg_loss', reg_loss)
+        self.log('train_emb_loss', emb_loss)
+
+        return loss
+    
     def validation_step(self, batch, batch_idx):
         inputs, labels, scales, pads = batch[:4]
         extra = batch[4]
@@ -446,6 +462,9 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
         self.val_map.reset()
 
     def query_anchors(self, pred: torch.Tensor, queries: torch.Tensor, similarity_th=.5):
+        pred = F.normalize(pred, dim=-1)
+        queries = F.normalize(queries, dim=-1)
+
         positives = []
         pos_similarity = []
         match_captions = []

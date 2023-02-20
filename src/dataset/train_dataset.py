@@ -277,16 +277,21 @@ class VisualGenome(VisionDataset):
         np_image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
         embed_table = torch.load(os.path.join(self.cache_dir, f"{img_id}.pth"))
 
+        ih, iw, ic = np_image.shape
         bboxes = []
         phr_embed = []
         phrases = []
         for region in meta['regions']:
-            x: int = max(0, region['x'])
-            y: int = max(0, region['y'])
-            w: int = region['width']
-            h: int = region['height']
+            x: int = min(max(0, region['x']), iw)
+            y: int = min(max(0, region['y']), ih)
+            w: int = min(iw - x, region['width'])
+            h: int = min(ih - y, region['height'])
             phrase: str = region['phrase']
             reg_id: int = region['region_id']
+
+            if w <= 5 or h <= 5:
+                # discard extremly small/incorrectly labeled bbox
+                continue
 
             phrases.append(phrase)
             phr_embed.append(embed_table[reg_id].to(torch.float32))
