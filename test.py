@@ -112,7 +112,11 @@ def dataset_warmup():
         "/home/ron_zhu/visual_genome/region_descriptions.json", 
         debug_augmentor(384),
     )
-    return
+    dataset._split_embed_table_by_img(
+        dataset.phrase_embed,
+        "/home/ron_zhu/visual_genome/VG_100K/region_embeds"
+    )
+
 
     # dataset = Laion400M("/home/ron_zhu/laion-400m/train_data", debug_augmentor(384))
     
@@ -144,5 +148,5 @@ def dataset_warmup():
 if __name__ == "__main__":
     # test()
     # inferece()
-    dataset_sanity()
-    # dataset_warmup()
+    # dataset_sanity()
+    dataset_warmup()

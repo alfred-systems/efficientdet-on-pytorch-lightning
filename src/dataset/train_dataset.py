@@ -6,6 +6,7 @@ from src.dataset.utils import *
 from src.dataset.bbox_augmentor import Bbox_Augmentor
 from pycocotools.coco import COCO
 from torchvision.datasets.vision import VisionDataset
+from tqdm import tqdm
 from loguru import logger
 from collections import defaultdict
 
@@ -204,12 +205,13 @@ class VisualGenome(VisionDataset):
         self.augmentor = bbox_augmentor
         
         self.cache_file = os.path.join(img_dir, "embed_cache.fp16.pth")
+        self.cache_dir = os.path.join(img_dir, "region_embeds")
         
         n = len(self.region_anno)
         if split == 'train':
-            self.region_anno = self.region_anno[:int(n * 0.9)]
+            self.region_anno_subset = self.region_anno[:int(n * 0.9)]
         else:
-            self.region_anno = self.region_anno[int(n * 0.9):]
+            self.region_anno_subset = self.region_anno[int(n * 0.9):]
             self.augmentor.with_np_image = True
         self.split = split
         self.max_det = 300  # NOTE: VG have max 267/ min 3/ avg 50 regions per image
@@ -222,10 +224,13 @@ class VisualGenome(VisionDataset):
         if not hasattr(self, '_phrase_embed'):
             if not os.path.exists(self.cache_file):
                 logger.info(f"Generate VisualGenome region description text embedding: {self.cache_file}")
-                self._create_region_embed(self.cache_file)
-            # logger.info(f"Loading VisualGenome region description embedding cache: {self.cache_file}")
-            # self.phrase_embed: Dict[int, Tensor] = torch.load(self.cache_file)
-            self._phrase_embed: Dict[int, Tensor] = defaultdict(lambda: torch.ones([640]).float())
+                self._split_embed_table_by_img(
+                    self._create_region_embed(self.cache_file),
+                    self.cache_dir
+                )
+            logger.info(f"Loading VisualGenome region description embedding cache: {self.cache_file}")
+            self._phrase_embed: Dict[int, Tensor] = torch.load(self.cache_file)
+            # self._phrase_embed: Dict[int, Tensor] = defaultdict(lambda: torch.ones([640]).float())
         return self._phrase_embed
     
     def _create_region_embed(self, cache_file: str):
@@ -237,8 +242,8 @@ class VisualGenome(VisionDataset):
         
         embed_table = {}
         with torch.no_grad():
-            m = len(self)
-            for i in range(m):
+            m = len(self.region_anno)
+            for i in tqdm(range(m)):
                 for region in self.region_anno[i]['regions']:
                     reg_id = region['region_id']
                     phrase = region['phrase']
@@ -250,28 +255,41 @@ class VisualGenome(VisionDataset):
         
         os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         torch.save(embed_table, cache_file)
+        return embed_table
+    
+    def _split_embed_table_by_img(self, phrase_embed: Dict[int, Tensor], cache_dir: str):
+        os.makedirs(cache_dir, exist_ok=True)
+        m = len(self.region_anno)
+        for i in tqdm(range(m)):
+            img_id = self.region_anno[i]['id']
+            table = {}
+            for region in self.region_anno[i]['regions']:
+                reg_id = region['region_id']
+                table[reg_id] = phrase_embed[reg_id]
+            torch.save(table, os.path.join(cache_dir, f"{img_id}.pth"))
     
     def __len__(self):
-        return len(self.region_anno)
+        return len(self.region_anno_subset)
     
     def __getitem__(self, index: int):
-        meta = self.region_anno[index]
+        meta = self.region_anno_subset[index]
         img_id: int = meta['id']
         np_image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
+        embed_table = torch.load(os.path.join(self.cache_dir, f"{img_id}.pth"))
 
         bboxes = []
         phr_embed = []
         phrases = []
         for region in meta['regions']:
-            x: int = region['x']
-            y: int = region['y']
+            x: int = max(0, region['x'])
+            y: int = max(0, region['y'])
             w: int = region['width']
             h: int = region['height']
             phrase: str = region['phrase']
             reg_id: int = region['region_id']
 
             phrases.append(phrase)
-            phr_embed.append(self.phrase_embed[reg_id].to(torch.float32))
+            phr_embed.append(embed_table[reg_id].to(torch.float32))
             bboxes.append([x, y, w, h])
         
         if self.augmentor:

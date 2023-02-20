@@ -8,3 +8,4 @@ loguru
 fire
 torchmetrics
 open_clip_torch
+tqdm
