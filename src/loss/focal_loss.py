@@ -337,8 +337,9 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         M: num_neg_samples = 1000
         """
 
-        fore_img_similarity = fore_emb @ fore_emb.T
-        fore_txt_similarity = fore_label_emb @ fore_label_emb.T
+        # HACK: try to only convert tensor back to fp32 after matrix dot prodct to avoid OOm
+        fore_img_similarity = (fore_emb @ fore_emb.T).float()
+        fore_txt_similarity = (fore_label_emb @ fore_label_emb.T).float()
         fore_targets = F.softmax(
             (fore_img_similarity + fore_txt_similarity) / 2 * temperature, dim=-1
         )
@@ -350,13 +351,15 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         fore_loss = (-fore_targets.T * F.log_softmax(logits.T, dim=-1)).sum()
         
         f2b_emb = torch.cat([fore_emb, back_emb], dim=0)
-        f2b_similarity = f2b_emb @ f2b_emb.T
-        f2b_target = F.softmax((f2b_similarity * temperature).float(), dim=-1)
+        f2b_similarity = (f2b_emb @ f2b_emb.T).float()
+        f2b_target = F.softmax(f2b_similarity * temperature, dim=-1)
         back_loss = -f2b_target.T * F.log_softmax((f2b_similarity / temperature).T, dim=-1)
         back_loss[:len(fore_emb), :len(fore_emb)] = 0.0  # NOTE: remove the part that is duplicated with fore_loss
         back_loss = back_loss.sum()
         
         loss =  (fore_loss + back_loss) / fore_emb.size(0)
+        if torch.isnan(loss):
+            breakpoint()
         # print(fore_loss, back_loss, loss)
         return loss
 
