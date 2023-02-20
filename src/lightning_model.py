@@ -97,6 +97,19 @@ class COCO_EfficientDet(pl.LightningModule):
         self.plot_freq = 500
         # TODO: https://github.com/Lightning-AI/metrics/issues/1024
         self.val_map = MeanAveragePrecision(box_format="xywh", class_metrics=False)
+    
+    def load_finetune_checkpoint(self, path):
+        m = torch.load(path)['state_dict']
+        model_dict = self.state_dict()
+        
+        for k in m.keys():
+            if k in model_dict:
+                pval = m[k]
+                if pval.shape == model_dict[k].shape:
+                    model_dict[k] = pval.clone()
+                else:
+                    logger.warning(f"[load_finetune_checkpoint] Get a miss-matching parameter {k}: {pval.shape} vs {model_dict[k].shape}")
+        self.load_state_dict(model_dict, strict=False)
 
     def configure_model(self):
         model = EfficientDet(self.coeff, 80, background_class=self.background_class, freeze_backbone=self.freeze_backbone)

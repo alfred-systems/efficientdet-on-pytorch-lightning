@@ -213,7 +213,7 @@ class ClipDet(RetinaNet_Frame):
         d_head = self.config['head_depth'][coeff]
         w_head = self.config['head_width'][coeff]
 
-        super().__init__(self.img_size, **kwargs)
+        super().__init__(self.img_size, freeze_backbone=freeze_backbone, **kwargs)
         self.freeze_backbone = freeze_backbone
 
         """

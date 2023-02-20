@@ -85,8 +85,9 @@ def train(config_name=None, **kwargs):
 
         if 'load_ckpt_weight' in cfg:
             logger.warning(f"load ckpt weight only: {cfg.load_ckpt_weight}")
-            ckpt = torch.load(cfg.load_ckpt_weight)
-            pl_model.load_state_dict(ckpt['state_dict'])
+            # ckpt = torch.load(cfg.load_ckpt_weight)
+            # pl_model.load_state_dict(ckpt['state_dict'], strict=False)
+            pl_model.load_finetune_checkpoint(cfg.load_ckpt_weight)
 
         if 'overfit_batches' not in cfg.trainer.Trainer:
             with logger.catch(reraise=True):
