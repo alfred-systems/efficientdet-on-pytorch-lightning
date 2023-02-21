@@ -179,7 +179,8 @@ class COCO_EfficientDet(pl.LightningModule):
 
         return loss
     
-    def plt_wandb_bbox(self, preds: torch.Tensor, images: List[np.ndarray], box_captions: List[List[str]]=None):
+    def plt_wandb_bbox(self, preds: torch.Tensor, images: List[np.ndarray], 
+                    box_captions: List[List[str]]=None, ground_truth_boxes=None, ground_truth_labels=None):
         batch_boxes = []
         
         for i in range(len(preds)):
@@ -206,7 +207,29 @@ class COCO_EfficientDet(pl.LightningModule):
                     "domain" : "pixel",
                     "scores" : { "score" : int(100 * score) }
                 })
-            batch_boxes.append({"predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME}})
+            
+            ground_truth = None
+            if ground_truth_boxes is not None and ground_truth_labels is not None:
+                ground_truth = {
+                    "box_data": [
+                        {
+                            "position" : {
+                                "minX" : box[0],
+                                "maxX" : box[0] + box[2],
+                                "minY" : box[1],
+                                "maxY" : box[1] + box[3],
+                            },
+                            "class_id" : cls + 1,
+                            "domain" : "pixel",
+                        }
+                        for box, cls in zip(ground_truth_boxes[i], ground_truth_labels[i])
+                    ],
+                    "class_labels": CLASS_NAME,
+                }
+            batch_boxes.append({
+                "predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME},
+                "ground_truths": ground_truth
+            })
         
         self.logger.log_image(key="validation-step-detect", images=images, step=self.global_step, boxes=batch_boxes)
     
@@ -453,9 +476,9 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             for i, caps in enumerate(nms_captions)
         ]
         tmp = {
-                'boxes': gt_boxes, # with -1 padding
-                'labels': (gt_boxes.sum(-1) >= 0).long() - 1,
-            }
+            'boxes': gt_boxes, # with -1 padding
+            'labels': (gt_boxes.sum(-1) >= 0).long() - 1,
+        }
 
         self.update_mean_ap(
             nms_preds, 
@@ -465,8 +488,17 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
         )
 
         if batch_idx < 3 and hasattr(self.logger, 'log_image'):
+            gt_boxes = [
+                boxes[boxes.max(dim=-1).values >= 0].cpu().to(torch.int32).numpy().tolist() 
+                for boxes in gt_boxes
+            ]
+            gt_labels = [[0] * len(gt_boxes[i]) for i in range(len(gt_boxes))]
+            
             np_imgs = [img.cpu().numpy() for img in extra['image_numpy']]
-            self.plt_wandb_bbox(nms_preds, np_imgs, box_captions=nms_captions)
+            self.plt_wandb_bbox(
+                nms_preds, np_imgs, box_captions=nms_captions, 
+                ground_truth_boxes=gt_boxes, ground_truth_labels=gt_labels
+            )
     
     def validation_epoch_end(self, val_step):
         for k, v in self.val_map.compute().items():
