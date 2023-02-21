@@ -54,8 +54,8 @@ def new_focal_loss(logits, targets, alpha: float, gamma: float, normalizer, labe
 
 
 def clip_loss(image_embeddings, text_embeddings, temperature=20.0):
-    # image_embeddings = F.normalize(image_embeddings, dim=1)
-    # text_embeddings = F.normalize(text_embeddings, dim=1)
+    image_embeddings = F.normalize(image_embeddings, dim=1)
+    text_embeddings = F.normalize(text_embeddings, dim=1)
 
     logits = (text_embeddings @ image_embeddings.T) / temperature
     images_similarity = image_embeddings @ image_embeddings.T
@@ -278,6 +278,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
 
         self.anchor_assigner = Anchor_Assigner(fore_th, back_th, False, False, bbox_format, label_type='embed')
         self.temperature = temperature
+        self.logit_scale = nn.Parameter(torch.tensor([0.07]))
     
     @staticmethod
     def sample_fore_background_boxes(anchor_emb, fore_idx, back_idx, fore_label_emb, 
@@ -328,7 +329,8 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         return fore_loss + back_loss
     
     @staticmethod
-    def contrastive_loss_v2(fore_emb, fore_label_emb, back_emb, temperature=20.0):
+    @float_args
+    def contrastive_loss_v2(fore_emb, fore_label_emb, back_emb, logit_scale=1.0, temperature=1.0):
         """
         fore_emb: embedding of foreground anchor boxes (N, 640)
         back_emb: embedding of background anchor boxes (batch_size * M, 640)
@@ -336,14 +338,15 @@ class ContrastiveL1_Loss(FocalL1_Loss):
 
         M: num_neg_samples = 1000
         """
-
+        scale = torch.clamp(torch.exp(logit_scale), min=1e-4, max=100)
+        
         # HACK: try to only convert tensor back to fp32 after matrix dot prodct to avoid OOm
-        fore_img_similarity = (fore_emb @ fore_emb.T).float()
-        fore_txt_similarity = (fore_label_emb @ fore_label_emb.T).float()
+        fore_img_similarity = (F.normalize(fore_emb, dim=1) @ fore_emb.T).float()
+        fore_txt_similarity = (F.normalize(fore_label_emb, dim=1) @ fore_label_emb.T).float()
         fore_targets = F.softmax(
             (fore_img_similarity + fore_txt_similarity) / 2 * temperature, dim=-1
         )
-        logits = (fore_label_emb @ fore_emb.T) / temperature
+        logits = (fore_label_emb @ fore_emb.T) / temperature * scale
 
         # NOTE: convert back to full precsion before reduce sum to avoid overflow
         fore_targets = fore_targets.float()
@@ -351,9 +354,11 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         fore_loss = (-fore_targets.T * F.log_softmax(logits.T, dim=-1)).sum()
         
         f2b_emb = torch.cat([fore_emb, back_emb], dim=0)
-        f2b_similarity = (f2b_emb @ f2b_emb.T).float()
+        f2b_similarity = (F.normalize(f2b_emb, dim=1) @ f2b_emb.T).float()
         f2b_target = F.softmax(f2b_similarity * temperature, dim=-1)
-        back_loss = -f2b_target.T * F.log_softmax((f2b_similarity / temperature).T, dim=-1)
+        f2b_logit = f2b_similarity / temperature * scale
+        
+        back_loss = -f2b_target.T * F.log_softmax(f2b_logit.T, dim=-1)
         back_loss[:len(fore_emb), :len(fore_emb)] = 0.0  # NOTE: remove the part that is duplicated with fore_loss
         back_loss = back_loss.sum()
         
@@ -404,6 +409,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
             torch.cat([t[0] for t in embed_tups]),
             torch.cat([t[1] for t in embed_tups]),
             torch.cat([t[2] for t in embed_tups]),
+            logit_scale=self.logit_scale,
         )
         
         cls_loss = sum(cls_losses)
