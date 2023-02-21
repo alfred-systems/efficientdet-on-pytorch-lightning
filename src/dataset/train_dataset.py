@@ -1,7 +1,9 @@
 import os
 import json
 import glob
+import random
 
+from src.utils.bbox import batch_iou
 from src.dataset.utils import *
 from src.dataset.bbox_augmentor import Bbox_Augmentor
 from pycocotools.coco import COCO
@@ -190,6 +192,7 @@ class COCO_Detection(VisionDataset):
 class VisualGenome(VisionDataset):
     
     MODEL = "convnext_base_w"
+    EMBED_SIZE = 640
     collect_fn = None
 
     def __init__(self, img_dir: str, 
@@ -270,6 +273,35 @@ class VisualGenome(VisionDataset):
     
     def __len__(self):
         return len(self.region_anno_subset)
+
+    def subsample(self, boxes, th=0.75):
+        """
+        There are many overlaped bbox for the same object in visual genome, used to
+        desction different attribute/state of the same object.
+        So we need to avoid using multiple overlaped boxes at once in order to make 
+        contrastive loss work.
+        """
+        pt_boxes = torch.tensor(boxes).unsqueeze(dim=0)
+        iou_mtx = batch_iou(pt_boxes, pt_boxes, format='xywh')[0]
+        assign = [-1] * len(boxes)  # -1 for to be assign, 0 for discarded, 1 for assigned as label
+        
+        for i, iou_1toN in enumerate(iou_mtx):
+            if assign[i] > -1:
+                continue
+            overlap = []  # include "i" itself
+            close = []
+            for j, iou in enumerate(iou_1toN):
+                if iou >= 0.9:
+                    assign[j] = 0
+                    overlap.append(j)
+                elif 0.9 > iou >= th:
+                    assign[j] = 0
+                    close.append(j)
+            
+            assign[random.choice(overlap)] = 1
+            if close:
+                assign[random.choice(close)] = 1
+        return assign
     
     def __getitem__(self, index: int):
         meta = self.region_anno_subset[index]
@@ -297,6 +329,11 @@ class VisualGenome(VisionDataset):
             phr_embed.append(embed_table[reg_id].to(torch.float32))
             bboxes.append([x, y, w, h])
         
+        assign = self.subsample(bboxes)
+        bboxes = [b for b, a in zip(bboxes, assign) if a == 1]
+        phr_embed = [b for b, a in zip(phr_embed, assign) if a == 1]
+        phrases = [b for b, a in zip(phrases, assign) if a == 1]
+
         if self.augmentor:
             category_ids = [0] * len(bboxes)  # TODO: decide to make use of category label or not
             # HACK: we use category_ids's slot to place bbox embedding, so we only keep embeds that still inside the image after augmentation
@@ -309,7 +346,8 @@ class VisualGenome(VisionDataset):
         
         for _ in range(len(bboxes), self.max_det):
             bboxes.append([-1, -1, -1, -1])
-            phr_embed.append(torch.zeros_like(phr_embed[0]))
+            phr_embed.append(torch.zeros([self.EMBED_SIZE], dtype=torch.float32))
+            # phr_embed.append(torch.zeros_like(phr_embed[0]))
         
         phr_embed = torch.stack(phr_embed)  # (n, 640)
         bboxes = torch.tensor(bboxes, dtype=torch.float32)  # (n, 4)
