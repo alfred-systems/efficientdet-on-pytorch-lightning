@@ -531,7 +531,7 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             self.log(f'val_{k}', v / steps, sync_dist=True)
             logger.info(f'val_{k}: {v / steps}')
 
-    def query_anchors(self, pred: torch.Tensor, queries: torch.Tensor, similarity_th=.1):
+    def query_anchors(self, pred: torch.Tensor, queries: torch.Tensor, similarity_th=.3):
         pred = F.normalize(pred, dim=-1)
         queries = F.normalize(queries, dim=-1)
 
