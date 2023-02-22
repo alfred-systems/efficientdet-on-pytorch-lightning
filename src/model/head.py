@@ -64,6 +64,59 @@ class Classifier(nn.Module):
             out = torch.cat(out, dim=1)
         return out
 
+    
+class Encoder(nn.Module):
+
+    def __init__(self,
+                 num_levels: int,
+                 depth: int,
+                 width: int,
+                 num_anchors: int,
+                 num_classes: int,
+                 Act: nn.Module = nn.SiLU(),
+                 ):
+        self.num_levels, self.num_anchors, self.num_classes \
+            = num_levels, num_anchors, num_classes
+
+        super().__init__()
+
+        self.conv_layers = nn.ModuleList([
+            nn.Conv2d(width, width, kernel_size=3, stride=1, padding=1, bias=False)
+            # Seperable_Conv2d(width, width, 3, 1, bias=True)
+            for _ in range(depth)
+        ])
+        self.bn_layers = nn.ModuleList([
+            nn.ModuleList([nn.BatchNorm2d(width) for _ in range(depth)])
+            for _ in range(num_levels)
+        ])
+        self.act = Act
+
+        self.conv_pred = nn.Conv2d(width, num_anchors * num_classes, kernel_size=3, stride=1, padding=1, bias=False)
+        # self.logit_scale = nn.Parameter(torch.tensor([0.07]))
+
+    def forward(self, features, flatten=True):
+        out = []
+        for i in range(self.num_levels):
+            f = features[i]
+
+            for conv, bn in zip(self.conv_layers, self.bn_layers[i]):
+                f = conv(f)
+                f = bn(f)
+                f = self.act(f)
+
+            pred = self.conv_pred(f)
+
+            if flatten:
+                pred = pred.permute(0, 2, 3, 1)
+                pred = pred.contiguous().view(pred.shape[0], pred.shape[1], pred.shape[2], self.num_anchors, self.num_classes)
+                pred = pred.contiguous().view(pred.shape[0], -1, self.num_classes)
+            # pred = pred * torch.clamp(torch.exp(self.logit_scale), min=1e-4, max=100)
+            out.append(pred)
+        
+        if flatten:
+            out = torch.cat(out, dim=1)
+        return out
+
 
 class Regressor(nn.Module):
 
@@ -161,9 +214,8 @@ class ClipDet_Head(nn.Module):
             num_levels, depth, width, num_anchors, 1, 
             Act, background_class=False
         )
-        self.encoder = Classifier(
-            num_levels, depth, width, num_anchors, embed_size, Act, 
-            output_prob=False, background_class=False
+        self.encoder = Encoder(
+            num_levels, depth, width, num_anchors, embed_size, Act,
         )
         self.regressor = Regressor(num_levels, depth, width, num_anchors, Act)
 

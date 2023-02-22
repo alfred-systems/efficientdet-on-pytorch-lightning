@@ -14,52 +14,12 @@ def float_args(func):
 
     return wrap
 
-
-def new_focal_loss(logits, targets, alpha: float, gamma: float, normalizer, label_smoothing: float = 0.01):
-    """Compute the focal loss between `logits` and the golden `target` values.
-    'New' is not the best descriptor, but this focal loss impl matches recent versions of
-    the official Tensorflow impl of EfficientDet. It has support for label smoothing, however
-    it is a bit slower, doesn't jit optimize well, and uses more memory.
-    Focal loss = -(1-pt)^gamma * log(pt)
-    where pt is the probability of being classified to the true class.
-    Args:
-        logits: A float32 tensor of size [batch, height_in, width_in, num_predictions].
-        targets: A float32 tensor of size [batch, height_in, width_in, num_predictions].
-        alpha: A float32 scalar multiplying alpha to the loss from positive examples
-            and (1-alpha) to the loss from negative examples.
-        gamma: A float32 scalar modulating loss from hard and easy examples.
-        normalizer: Divide loss by this value.
-        label_smoothing: Float in [0, 1]. If > `0` then smooth the labels.
-    Returns:
-        loss: A float32 scalar representing normalized total loss.
-    """
-    # compute focal loss multipliers before label smoothing, such that it will not blow up the loss.
-    pred_prob = logits
-    # pred_prob = logits.sigmoid()
-    
-    targets = targets.to(logits.dtype)
-    onem_targets = 1. - targets
-    p_t = (targets * pred_prob) + (onem_targets * (1. - pred_prob))
-    alpha_factor = targets * alpha + onem_targets * (1. - alpha)
-    modulating_factor = (1. - p_t) ** gamma
-
-    # apply label smoothing for cross_entropy for each entry.
-    if label_smoothing > 0.:
-        targets = targets * (1. - label_smoothing) + .5 * label_smoothing
-    ce = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
-
-    # compute the final loss and return
-    element_wise_loss = (1 / normalizer) * alpha_factor * modulating_factor * ce
-    return element_wise_loss.sum()
-
-
+@float_args
 def clip_loss(image_embeddings, text_embeddings, temperature=20.0):
-    image_embeddings = F.normalize(image_embeddings, dim=1)
-    text_embeddings = F.normalize(text_embeddings, dim=1)
 
     logits = (text_embeddings @ image_embeddings.T) / temperature
-    images_similarity = image_embeddings @ image_embeddings.T
-    texts_similarity = text_embeddings @ text_embeddings.T
+    images_similarity = F.normalize(image_embeddings, dim=1) @ image_embeddings.T
+    texts_similarity = F.normalize(text_embeddings, dim=1) @ text_embeddings.T
     targets = F.softmax(
         (images_similarity + texts_similarity) / 2 * temperature, dim=-1
     )
@@ -330,7 +290,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
     
     @staticmethod
     @float_args
-    def contrastive_loss_v2(fore_emb, fore_label_emb, back_emb, logit_scale=1.0, temperature=1.0):
+    def contrastive_loss_v2(fore_emb, fore_label_emb, back_emb, logit_scale=1.0, temperature=10.0):
         """
         fore_emb: embedding of foreground anchor boxes (N, 640)
         back_emb: embedding of background anchor boxes (batch_size * M, 640)
@@ -338,7 +298,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
 
         M: num_neg_samples = 1000
         """
-        scale = torch.clamp(torch.exp(logit_scale), min=1e-4, max=100)
+        scale = torch.clamp(logit_scale, min=1e-3, max=100)
         
         # HACK: try to only convert tensor back to fp32 after matrix dot prodct to avoid OOm
         fore_img_similarity = (F.normalize(fore_emb, dim=1) @ fore_emb.T).float()
@@ -346,7 +306,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         fore_targets = F.softmax(
             (fore_img_similarity + fore_txt_similarity) / 2 * temperature, dim=-1
         )
-        logits = (fore_label_emb @ fore_emb.T) / temperature * scale
+        logits = (fore_label_emb @ fore_emb.T) * scale
 
         # NOTE: convert back to full precsion before reduce sum to avoid overflow
         fore_targets = fore_targets.float()
@@ -356,7 +316,7 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         f2b_emb = torch.cat([fore_emb, back_emb], dim=0)
         f2b_similarity = (F.normalize(f2b_emb, dim=1) @ f2b_emb.T).float()
         f2b_target = F.softmax(f2b_similarity * temperature, dim=-1)
-        f2b_logit = f2b_similarity / temperature * scale
+        f2b_logit = f2b_similarity * scale
         
         back_loss = -f2b_target.T * F.log_softmax(f2b_logit.T, dim=-1)
         back_loss[:len(fore_emb), :len(fore_emb)] = 0.0  # NOTE: remove the part that is duplicated with fore_loss
@@ -390,7 +350,6 @@ class ContrastiveL1_Loss(FocalL1_Loss):
         target_assigns = self.anchor_assigner(labels, anchors)
         cls_losses = []
         reg_losses = []
-        emb_losses = []
         embed_tups = []
 
         for i, assign in enumerate(target_assigns):
@@ -422,6 +381,6 @@ class ContrastiveL1_Loss(FocalL1_Loss):
             cls_loss /= batch
             reg_loss /= batch
         
-        total_loss += emb_loss
+        total_loss = total_loss + emb_loss
 
         return total_loss, cls_loss, reg_loss, emb_loss
