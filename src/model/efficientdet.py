@@ -31,7 +31,6 @@ class RetinaNet_Frame(nn.Module):
 
         self.anchors = self.retinanet_anchors(img_size, self.anchor_sizes, self.anchor_scales, self.anchor_ratios, self.strides)
 
-
     def forward(self, input, detect: bool = False):
         if self.freeze_backbone:
             with torch.no_grad():
@@ -45,12 +44,10 @@ class RetinaNet_Frame(nn.Module):
             self.detect(out)
         return out, self.anchors
 
-
     def detect(self, out):
         self.anchors = self.anchors.to(out.device)
         out[..., :2] = self.anchors[..., :2] + (out[..., :2] * self.anchors[..., 2:])
         out[..., 2:4] = torch.exp(out[..., 2:4]) * self.anchors[..., 2:]
-
 
     def retinanet_anchors(self, img_size, anchor_sizes, anchor_scales, anchor_ratios, strides):
         anchor_priors = self.retinanet_anchor_priors(anchor_sizes, anchor_scales, anchor_ratios, strides)

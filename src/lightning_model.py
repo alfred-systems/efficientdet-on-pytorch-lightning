@@ -1,4 +1,5 @@
 import datetime
+from collections import defaultdict
 from pprint import pprint
 from loguru import logger
 from torch.optim import AdamW
@@ -138,11 +139,15 @@ class COCO_EfficientDet(pl.LightningModule):
         return Hard_NMS(self.iou_th, self.max_det, 'cxcywh')
 
     def configure_optimizers(self):
-        optimizer = AdamW([
-            {"params": self.model.backbone.parameters(), 'lr': self.lr / 1},
+        param_groups = [
+            {"params": self.model.backbone.parameters(), 'lr': self.lr * 0.8},
             {"params": self.model.fpn.parameters(), 'lr': self.lr},
             {"params": self.model.head.parameters(), 'lr': self.lr},
-        ], self.lr)
+        ]
+        if list(self.loss.parameters()):
+            param_groups.append({"params": self.loss.parameters(), 'lr': self.lr})
+        
+        optimizer = AdamW(param_groups, self.lr)
         # optimizer = AdamW(self.model.backbone.parameters(), self.lr)
         scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5,
                                       threshold=0.001, threshold_mode='abs', verbose=True)
@@ -406,7 +411,9 @@ class Laion400m_EfficientDet(COCO_EfficientDet):
 class VisGenome_EfficientDet(COCO_EfficientDet):
 
     def configure_model(self):
-        model = ClipDet(self.coeff)
+        model = ClipDet(self.coeff, 
+                        background_class=self.background_class,
+                        freeze_backbone=self.freeze_backbone)
 
         if not self.pretrained_backbone:
             raise RuntimeError('not suposse to use this option')
@@ -441,14 +448,18 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
         self.log('train_cls_loss', cls_loss)
         self.log('train_reg_loss', reg_loss)
         self.log('train_emb_loss', emb_loss)
+        self.log('logit_scale', self.loss.logit_scale)
 
         return loss
     
     def validation_step(self, batch, batch_idx):
         inputs, labels, scales, pads = batch[:4]
+        sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
         extra = batch[4]
         
-        preds, _ = self.model(inputs, detect=True)
+        preds, anchors = self.model(inputs, detect=True)
+        loss, cls_loss, _, emb_loss  = self.loss(preds, anchors, sync_labels)
+
         device = preds.device
         batch_size = preds.size(0)
         
@@ -499,6 +510,11 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
                 nms_preds, np_imgs, box_captions=nms_captions, 
                 ground_truth_boxes=gt_boxes, ground_truth_labels=gt_labels
             )
+        return {
+            'loss': loss,
+            'cls_loss': cls_loss,
+            'emb_loss': emb_loss,
+        }
     
     def validation_epoch_end(self, val_step):
         for k, v in self.val_map.compute().items():
@@ -506,7 +522,16 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             logger.info(f'{k}: {v}')
         self.val_map.reset()
 
-    def query_anchors(self, pred: torch.Tensor, queries: torch.Tensor, similarity_th=.5):
+        accume_losses = defaultdict(lambda: 0.0)
+        for step_result in val_step:
+            for k, v in step_result.items():
+                accume_losses[k] += v
+        steps = len(val_step)
+        for k, v in accume_losses.items():
+            self.log(f'val_{k}', v / steps, sync_dist=True)
+            logger.info(f'val_{k}: {v / steps}')
+
+    def query_anchors(self, pred: torch.Tensor, queries: torch.Tensor, similarity_th=.1):
         pred = F.normalize(pred, dim=-1)
         queries = F.normalize(queries, dim=-1)
 
@@ -515,6 +540,7 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
         match_captions = []
         
         for i, (pred_per_img, que_per_img) in enumerate(zip(pred, queries)):
+            # breakpoint()
             # pred_per_img = pred_per_img[torch.abs(pred_per_img.sum(-1)) > 1e-6]  
             que_per_img = que_per_img[torch.abs(que_per_img.sum(-1)) > 1e-6]  # remove padding
             
@@ -522,6 +548,7 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             max_score, indies = similarity.max(dim=-1)
             positives.append(max_score > similarity_th)
             pos_similarity.append(max_score[max_score > similarity_th])
+            # torch.topk(similarity, 5, dim=0).values.permute(1,0)
             
             captions = indies[max_score > similarity_th]
             match_captions.append(captions)
