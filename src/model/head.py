@@ -235,3 +235,58 @@ class ClipDet_Head(nn.Module):
                 emb = emb.view([b, self.num_anchors, self.embed_size, h, w])
                 mean_anchor_emb.append(emb.mean(dim=1))
             return out, mean_anchor_emb
+
+
+class ClipFuseDet_Head(nn.Module):
+    """
+    overhere encoder will output a embeding of size "embed_size" per anchor box,
+    instead of a classification prob distribution.
+    and classifier are only for distigish object and background.
+    """
+    def __init__(self,
+                 num_levels: int,
+                 depth: int,
+                 width: int,
+                 num_anchors: int,
+                 embed_size: int,
+                 Act: nn.Module = nn.SiLU(),
+                 background_class: bool = True,
+                 ):
+        super().__init__()
+
+        self.num_anchors = num_anchors
+        self.embed_size = embed_size
+
+        if background_class:
+            logger.warning("ClipDet_Head will alway using sigmoid activation, hence ignore background_class parameter.")
+        
+        self.vl_proj = torch.nn.Conv2d(
+            width + embed_size, 
+            width, 
+            kernel_size=1, 
+            padding=0,
+            bias=False
+        )
+        
+        self.classifier = Classifier(
+            num_levels, depth, width, num_anchors, 1, 
+            Act, background_class=False
+        )
+        self.regressor = Regressor(num_levels, depth, width, num_anchors, Act)
+
+    def forward(self, features: List[Tensor], query_embed: Union[List[Tensor], Tensor]):
+        """
+        features: (b, c, h, w) x num of BiFPN layers
+        query_embed: (b, clip_embed_size, ) or (num_regions, clip_embed_size, ) x batch_size
+        """
+        reg_out = self.regressor(features)
+        cls_features = []
+        for feat in features:
+            b, c, h, w = feat.shape
+            queery_4d = query_embed.unsqueeze(-1).unsqueeze(-1)
+            queery_4d = queery_4d.repeat(1, 1, h, w)
+            self.vl_proj(torch.cat([feat, queery_4d])) 
+        cls_out = self.classifier(cls_features)
+        
+        out = torch.cat((reg_out, cls_out), dim=2)
+        return out

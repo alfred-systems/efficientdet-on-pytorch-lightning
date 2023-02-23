@@ -194,6 +194,7 @@ class VisualGenome(VisionDataset):
     MODEL = "convnext_base_w"
     EMBED_SIZE = 640
     collect_fn = None
+    max_det = 300  # NOTE: VG have max 267/ min 3/ avg 50 regions per image
 
     def __init__(self, img_dir: str, 
                  annFile: str = '', 
@@ -217,7 +218,6 @@ class VisualGenome(VisionDataset):
             self.region_anno_subset = self.region_anno[int(n * 0.9):]
             self.augmentor.with_np_image = True
         self.split = split
-        self.max_det = 300  # NOTE: VG have max 267/ min 3/ avg 50 regions per image
     
     @property
     def phrase_embed(self):
@@ -370,6 +370,79 @@ class VisualGenome(VisionDataset):
                 'image_numpy': transform['image_numpy'],
             }
             return image, labels, scale, pad, extra
+
+
+class VisualGenomeFuseDet(VisualGenome):
+
+    max_det = 1
+    
+    def __getitem__(self, index: int):
+        meta = self.region_anno_subset[index]
+        img_id: int = meta['id']
+        np_image = cv2.imread(os.path.join(self.img_dir, f"{img_id}.jpg"))
+        embed_table = torch.load(os.path.join(self.cache_dir, f"{img_id}.pth"))
+
+        ih, iw, ic = np_image.shape
+        bboxes = []
+        phr_embed = []
+        phrases = []
+        for region in meta['regions']:
+            x: int = min(max(0, region['x']), iw)
+            y: int = min(max(0, region['y']), ih)
+            w: int = min(iw - x, region['width'])
+            h: int = min(ih - y, region['height'])
+            phrase: str = region['phrase']
+            reg_id: int = region['region_id']
+
+            if w <= 5 or h <= 5:
+                # discard extremly small/incorrectly labeled bbox
+                continue
+
+            phrases.append(phrase)
+            phr_embed.append(embed_table[reg_id].to(torch.float32))
+            bboxes.append([x, y, w, h])
+        
+        pick_one = random.randint(0, len(bboxes) - 1)
+        bboxes = [bboxes[pick_one]]
+        phr_embed = phr_embed[pick_one]
+        phrases = [phrases[pick_one]]
+
+        if self.augmentor:
+            category_ids = [0] * len(bboxes)  # TODO: decide to make use of category label or not
+            # HACK: we use category_ids's slot to place bbox embedding, so we only keep embeds that still inside the image after augmentation
+            transform = self.augmentor(np_image, bboxes, phr_embed)  
+            image, bboxes, phr_embed = transform['image'], transform['bboxes'], transform['category_ids']
+        else:
+            image = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
+            image = np.transpose(image, (2, 0, 1))
+            image = torch.from_numpy(image)
+        
+        for _ in range(len(bboxes), self.max_det):
+            bboxes.append([-1, -1, -1, -1])
+            phr_embed.append(torch.zeros([self.EMBED_SIZE], dtype=torch.float32))
+            # phr_embed.append(torch.zeros_like(phr_embed[0]))
+        
+        fixed_one_cls_onehot = torch.ones([1, 1], dtype=torch.float32)
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)  # (n, 4)
+        labels = torch.cat([bboxes, fixed_one_cls_onehot], dim=-1)
+
+        if self.split == 'train':
+            return image, phr_embed, labels
+        else:
+            h, w, c = np_image.shape
+            _h, _w, _ = image.shape
+
+            scale = _h / h
+            diff = np.abs(h - w)
+            p1 = diff // 2
+            p2 = diff - diff // 2
+            pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
+            pad = torch.tensor(pad)
+            extra = {
+                'phrases': '&&'.join(phrases),
+                'image_numpy': transform['image_numpy'],
+            }
+            return image, phr_embed, labels, scale, pad, extra
 
 
 class Laion400M(VisionDataset):

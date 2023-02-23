@@ -9,7 +9,7 @@ from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from src.__init__ import *
 from src.utils.bbox import convert_bbox, untransform_bbox
 from src.dataset.metric import Evaluate_COCO
-from src.model.efficientdet import EfficientDet, ConvNeXtDet, ClipDet
+from src.model.efficientdet import EfficientDet, ConvNeXtDet, ClipDet, ClipFuseDet
 from src.loss.focal_loss import FocalL1_Loss, ContrastiveL1_Loss, clip_loss
 from src.utils.nms.hard_nms import Hard_NMS
 from src.dataset.train_dataset import CLASS_NAME
@@ -277,9 +277,8 @@ class COCO_EfficientDet(pl.LightningModule):
         preds = self.nms(preds)
 
         # logger.debug(f"validation_step NODE_RANK: {self.global_rank} {batch_idx}")
-        sample_range = (batch_idx * batch_size, (batch_idx + 1) * batch_size)
         plot =  (
-            sample_range[0] <= self.plot_freq * sample_range[0] // self.plot_freq <= sample_range[1] 
+            batch_idx < 3
             and hasattr(self.logger, 'log_image')
         )
         if plot:
@@ -409,6 +408,10 @@ class Laion400m_EfficientDet(COCO_EfficientDet):
 
 
 class VisGenome_EfficientDet(COCO_EfficientDet):
+    """
+    Align anchor box embedding with CLIP text embedding, and use 
+    cos-simailiarity as anchor box confidence.
+    """
 
     def configure_model(self):
         model = ClipDet(self.coeff, 
@@ -560,3 +563,76 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
         )
 
     
+class VisGenome_FuseDet(COCO_EfficientDet):
+    """
+    
+    """
+
+    def configure_model(self):
+        model = ClipFuseDet(self.coeff, 
+                        background_class=self.background_class,
+                        freeze_backbone=self.freeze_backbone)
+        return model
+    
+    def training_step(self, batch, batch_idx):
+        inputs, que_emb, labels = batch
+        preds, anchors = self.model(inputs, que_emb, detect=False)
+        sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
+        
+        sync_labels = sync_labels.to(preds.device)
+        anchors = anchors.to(preds.device)  # BUG: anchors is a Tensor, won't be auto move to correct device by DDP
+
+        loss, cls_loss, reg_loss  = self.loss(preds, anchors, sync_labels)
+        self.log('train_loss', loss)
+        self.log('train_cls_loss', cls_loss)
+        self.log('train_reg_loss', reg_loss)
+
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        inputs, que_emb, labels, scales, pads = batch[:4]
+        sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
+        extra = batch[4]
+        
+        preds, anchors = self.model(inputs, detect=True)
+        device = preds.device
+        batch_size = preds.size(0)
+
+        # nms_preds, nms_captions = self.nms(torch.cat([pred_boxes, scores], dim=-1), pred_meta=captions)
+        nms_preds = self.nms(preds)
+        region_captions: List[str] = extra['phrases']
+        region_captions = [join_cap.split('&&') for join_cap in region_captions]
+        nms_captions = [
+            caps * len(nms_preds[i])
+            for i, caps in enumerate(region_captions)
+        ]
+        tmp = {
+            'boxes': gt_boxes, # with -1 padding
+            'labels': (gt_boxes.sum(-1) >= 0).long() - 1,
+        }
+
+        self.update_mean_ap(
+            nms_preds, 
+            torch.ones_like(scales), 
+            torch.zeros_like(pads), 
+            tmp, 
+        )
+
+        if batch_idx < 3 and hasattr(self.logger, 'log_image'):
+            gt_boxes = [
+                boxes[boxes.max(dim=-1).values >= 0].cpu().to(torch.int32).numpy().tolist() 
+                for boxes in gt_boxes
+            ]
+            gt_labels = [[0] * len(gt_boxes[i]) for i in range(len(gt_boxes))]
+            
+            np_imgs = [img.cpu().numpy() for img in extra['image_numpy']]
+            self.plt_wandb_bbox(
+                nms_preds, np_imgs, box_captions=nms_captions, 
+                ground_truth_boxes=gt_boxes, ground_truth_labels=gt_labels
+            )
+    
+    def validation_epoch_end(self, val_step):
+        for k, v in self.val_map.compute().items():
+            self.log(f'val_{k}', v, sync_dist=True)
+            logger.info(f'{k}: {v}')
+        self.val_map.reset()
