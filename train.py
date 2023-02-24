@@ -16,9 +16,9 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 def train(config_name=None, **kwargs):
     
     def _train(cfg: DictConfig):
-        from src.lightning_model import COCO_EfficientDet, Laion400m_EfficientDet, VisGenome_EfficientDet
+        from src.lightning_model import COCO_EfficientDet, Laion400m_EfficientDet, VisGenome_EfficientDet, VisGenome_FuseDet
 
-        from src.dataset.train_dataset import COCO_Detection, Laion400M, VisualGenome
+        from src.dataset.train_dataset import COCO_Detection, Laion400M, VisualGenome, VisualGenomeFuseDet
         from src.dataset.val_dataset import Validate_Detection
         from src.dataset.bbox_augmentor import default_augmentor
         from torch.utils.data import DataLoader
@@ -30,6 +30,7 @@ def train(config_name=None, **kwargs):
             "COCO_EfficientDet": COCO_EfficientDet,
             "Laion400m_EfficientDet": Laion400m_EfficientDet,
             "VisGenome_EfficientDet": VisGenome_EfficientDet,
+            "VisGenome_FuseDet": VisGenome_FuseDet,
         }
 
         use_background_class = cfg.use_background_class if 'use_background_class' in cfg else True
@@ -56,6 +57,7 @@ def train(config_name=None, **kwargs):
             "COCO_EfficientDet": (COCO_Detection, Validate_Detection),
             "Laion400m_EfficientDet": (Laion400M, Laion400M),
             "VisGenome_EfficientDet": (VisualGenome, VisualGenome),
+            "VisGenome_FuseDet": (VisualGenomeFuseDet, VisualGenomeFuseDet),
         }
         train_set = pl_data[cfg.trainer.Task.pl_module][0](
             cfg.dataset.train.root,

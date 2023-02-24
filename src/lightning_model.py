@@ -590,11 +590,10 @@ class VisGenome_FuseDet(COCO_EfficientDet):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        inputs, que_emb, labels, scales, pads = batch[:4]
+        inputs, que_emb, labels, scales, pads, extra = batch
         sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
-        extra = batch[4]
         
-        preds, anchors = self.model(inputs, detect=True)
+        preds, anchors = self.model(inputs, que_emb, detect=True)
         device = preds.device
         batch_size = preds.size(0)
 
@@ -606,11 +605,12 @@ class VisGenome_FuseDet(COCO_EfficientDet):
             caps * len(nms_preds[i])
             for i, caps in enumerate(region_captions)
         ]
+
+        gt_boxes = labels[..., :4]
         tmp = {
             'boxes': gt_boxes, # with -1 padding
             'labels': (gt_boxes.sum(-1) >= 0).long() - 1,
         }
-
         self.update_mean_ap(
             nms_preds, 
             torch.ones_like(scales), 

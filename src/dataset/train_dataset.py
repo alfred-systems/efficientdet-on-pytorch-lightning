@@ -404,7 +404,7 @@ class VisualGenomeFuseDet(VisualGenome):
         
         pick_one = random.randint(0, len(bboxes) - 1)
         bboxes = [bboxes[pick_one]]
-        phr_embed = phr_embed[pick_one]
+        phr_embed = [phr_embed[pick_one]]
         phrases = [phrases[pick_one]]
 
         if self.augmentor:
@@ -425,6 +425,7 @@ class VisualGenomeFuseDet(VisualGenome):
         fixed_one_cls_onehot = torch.ones([1, 1], dtype=torch.float32)
         bboxes = torch.tensor(bboxes, dtype=torch.float32)  # (n, 4)
         labels = torch.cat([bboxes, fixed_one_cls_onehot], dim=-1)
+        phr_embed = phr_embed[0]
 
         if self.split == 'train':
             return image, phr_embed, labels

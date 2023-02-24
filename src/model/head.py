@@ -283,9 +283,10 @@ class ClipFuseDet_Head(nn.Module):
         cls_features = []
         for feat in features:
             b, c, h, w = feat.shape
-            queery_4d = query_embed.unsqueeze(-1).unsqueeze(-1)
-            queery_4d = queery_4d.repeat(1, 1, h, w)
-            self.vl_proj(torch.cat([feat, queery_4d])) 
+            query_4d = query_embed.unsqueeze(-1).unsqueeze(-1)
+            query_4d = query_4d.repeat(1, 1, h, w)
+            feat = self.vl_proj(torch.cat([feat, query_4d], dim=1))
+            cls_features.append(feat)
         cls_out = self.classifier(cls_features)
         
         out = torch.cat((reg_out, cls_out), dim=2)

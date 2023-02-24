@@ -44,7 +44,7 @@ def dataset_sanity():
     # from src.dataset.val_dataset import COCO_Detection
     from src.dataset.val_dataset import Validate_Detection
     from src.dataset.bbox_augmentor import debug_augmentor
-    from src.dataset.train_dataset import Laion400M, VisualGenome
+    from src.dataset.train_dataset import Laion400M, VisualGenome, VisualGenomeFuseDet
 
     # augmentor = debug_augmentor(512)
     # dataset = COCO_Detection(
@@ -55,7 +55,7 @@ def dataset_sanity():
     #     "/home/ron/Downloads/mscoco/val2017", 
     #     "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_val2017.json",
     #     512)
-    dataset = VisualGenome(
+    dataset = VisualGenomeFuseDet(
         "/home/ron_zhu/visual_genome/VG_100K", 
         "/home/ron_zhu/visual_genome/region_descriptions.json", 
         debug_augmentor(384),
@@ -148,5 +148,5 @@ def dataset_warmup():
 if __name__ == "__main__":
     # test()
     # inferece()
-    # dataset_sanity()
-    dataset_warmup()
+    dataset_sanity()
+    # dataset_warmup()
