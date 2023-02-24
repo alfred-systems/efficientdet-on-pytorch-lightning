@@ -24,8 +24,8 @@ class Hard_NMS:
         scores, obj_classes = torch.max(cls_preds, dim=2)
         
         redu_prob = cls_preds.sum(dim=-1)
-        softmax = torch.allclose(redu_prob, torch.ones_like(redu_prob))
         num_class = cls_preds.shape[-1]
+        softmax = torch.allclose(redu_prob, torch.ones_like(redu_prob)) and num_class > 1
 
         if self.bbox_format != 'xyxy':
             bbox_preds = convert_bbox(bbox_preds, self.bbox_format, 'xyxy')

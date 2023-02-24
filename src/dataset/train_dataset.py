@@ -2,6 +2,7 @@ import os
 import json
 import glob
 import random
+import copy
 
 from src.utils.bbox import batch_iou
 from src.dataset.utils import *
@@ -213,9 +214,9 @@ class VisualGenome(VisionDataset):
         
         n = len(self.region_anno)
         if split == 'train':
-            self.region_anno_subset = self.region_anno[:int(n * 0.9)]
+            self.region_anno_subset = self.region_anno[:int(n * 0.95)]
         else:
-            self.region_anno_subset = self.region_anno[int(n * 0.9):]
+            self.region_anno_subset = self.region_anno[int(n * 0.95):]
             self.augmentor.with_np_image = True
         self.split = split
     
@@ -314,8 +315,8 @@ class VisualGenome(VisionDataset):
         phr_embed = []
         phrases = []
         for region in meta['regions']:
-            x: int = min(max(0, region['x']), iw)
-            y: int = min(max(0, region['y']), ih)
+            x: int = min(max(0, region['x']), iw)  # xmin
+            y: int = min(max(0, region['y']), ih)  # ymin
             w: int = min(iw - x, region['width'])
             h: int = min(ih - y, region['height'])
             phrase: str = region['phrase']
@@ -329,7 +330,7 @@ class VisualGenome(VisionDataset):
             phr_embed.append(embed_table[reg_id].to(torch.float32))
             bboxes.append([x, y, w, h])
         
-        assign = self.subsample(bboxes)
+        assign = self.subsample(copy.deepcopy(bboxes))
         bboxes = [b for b, a in zip(bboxes, assign) if a == 1]
         phr_embed = [b for b, a in zip(phr_embed, assign) if a == 1]
         phrases = [b for b, a in zip(phrases, assign) if a == 1]
@@ -406,6 +407,7 @@ class VisualGenomeFuseDet(VisualGenome):
         bboxes = [bboxes[pick_one]]
         phr_embed = [phr_embed[pick_one]]
         phrases = [phrases[pick_one]]
+        # tmp = copy.deepcopy(bboxes)
 
         if self.augmentor:
             category_ids = [0] * len(bboxes)  # TODO: decide to make use of category label or not
@@ -431,7 +433,7 @@ class VisualGenomeFuseDet(VisualGenome):
             return image, phr_embed, labels
         else:
             h, w, c = np_image.shape
-            _h, _w, _ = image.shape
+            c, _h, _w = image.shape
 
             scale = _h / h
             diff = np.abs(h - w)
@@ -439,6 +441,7 @@ class VisualGenomeFuseDet(VisualGenome):
             p2 = diff - diff // 2
             pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
             pad = torch.tensor(pad)
+            # print(tmp, bboxes, scale, pad)
             extra = {
                 'phrases': '&&'.join(phrases),
                 'image_numpy': transform['image_numpy'],

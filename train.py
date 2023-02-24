@@ -20,7 +20,7 @@ def train(config_name=None, **kwargs):
 
         from src.dataset.train_dataset import COCO_Detection, Laion400M, VisualGenome, VisualGenomeFuseDet
         from src.dataset.val_dataset import Validate_Detection
-        from src.dataset.bbox_augmentor import default_augmentor
+        from src.dataset.bbox_augmentor import default_augmentor, bbox_safe_augmentor
         from torch.utils.data import DataLoader
 
         from src.utils.config_trainer import Config_Trainer
@@ -50,7 +50,8 @@ def train(config_name=None, **kwargs):
             background_class=use_background_class,
             freeze_backbone=freeze_backbone)
         # augmentor
-        augmentor = default_augmentor(pl_model.model.img_size)
+        # augmentor = default_augmentor(pl_model.model.img_size)
+        augmentor = bbox_safe_augmentor(pl_model.model.img_size)
 
         # dataset and dataloader
         pl_data = {
@@ -91,8 +92,8 @@ def train(config_name=None, **kwargs):
             # pl_model.load_state_dict(ckpt['state_dict'], strict=False)
             pl_model.load_finetune_checkpoint(cfg.load_ckpt_weight)
 
-        if 'overfit_batches' not in cfg.trainer.Trainer:
-            with logger.catch(reraise=True):
+        with logger.catch(reraise=True):
+            if 'overfit_batches' not in cfg.trainer.Trainer:
                 wb_logger = Another_WandbLogger(**cfg.log)
                 trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=11)
 
@@ -102,9 +103,9 @@ def train(config_name=None, **kwargs):
                     trainer.fit(pl_model, train_loader, val_loader, ckpt_path=cfg.ckpt_path)
                 else:
                     trainer.fit(pl_model, train_loader, val_loader)
-        else:
-            trainer = pl.Trainer(**cfg_trainer, num_sanity_val_steps=1, check_val_every_n_epoch=10)
-            trainer.fit(pl_model, train_loader, val_loader)
+            else:
+                trainer = pl.Trainer(**cfg_trainer, num_sanity_val_steps=1, check_val_every_n_epoch=10)
+                trainer.fit(pl_model, train_loader, val_loader)
 
         wandb.finish()
     

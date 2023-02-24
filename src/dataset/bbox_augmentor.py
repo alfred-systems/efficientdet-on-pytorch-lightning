@@ -58,7 +58,11 @@ class Bbox_Augmentor:
 
 
     def make_compose(self):
-        bbox_params = A.BboxParams(self.format, label_fields=['category_ids'], min_area=self.min_area, min_visibility=self.min_visibility)
+        bbox_params = A.BboxParams(
+            self.format, 
+            label_fields=['category_ids'], 
+            min_area=self.min_area, 
+            min_visibility=self.min_visibility)
         self.Compose = A.Compose(self.transforms, bbox_params=bbox_params, p=self.total_prob)
 
 
@@ -103,8 +107,6 @@ class Bbox_Augmentor:
         return output
 
 
-
-
 def default_augmentor(
         img_size: Union[int, Tuple[int, int]]
 ) -> Bbox_Augmentor:
@@ -127,6 +129,28 @@ def default_augmentor(
     return aug
 
 
+def bbox_safe_augmentor(
+        img_size: Union[int, Tuple[int, int]]
+) -> Bbox_Augmentor:
+
+    if isinstance(img_size, tuple):
+        h, w = img_size
+    else:
+        h, w = img_size, img_size
+
+    aug = Bbox_Augmentor(1, 'coco', min_area=0.0, min_visibility=0.05)
+
+    aug.append(A.HorizontalFlip(p=0.5))
+    aug.append(A.RandomSizedBBoxSafeCrop(h, w, p=0.5))
+    aug.append(A.RandomScale((-0.2, 0), p=0.5))
+
+    aug.append(A.PadIfNeeded(h, w, border_mode=cv2.BORDER_CONSTANT, value=imagenet_fill(), p=0.5))
+    aug.append(A.Resize(h, w, p=1))
+    aug.make_compose()
+
+    return aug
+
+
 def debug_augmentor(
         img_size: Union[int, Tuple[int, int]]
 ) -> Bbox_Augmentor:
@@ -138,7 +162,6 @@ def debug_augmentor(
 
     aug = Bbox_Augmentor(1, 'coco', min_area=512, min_visibility=0.2, dataset_stat=None)
 
-    aug.append(A.PadIfNeeded(h, w, border_mode=cv2.BORDER_CONSTANT, value=imagenet_fill(), p=0.5))
     aug.append(A.Resize(h, w, p=1))
     aug.make_compose()
 

@@ -1,10 +1,12 @@
 import datetime
+import pysnooper
 from collections import defaultdict
 from pprint import pprint
 from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
+
 
 from src.__init__ import *
 from src.utils.bbox import convert_bbox, untransform_bbox
@@ -184,8 +186,14 @@ class COCO_EfficientDet(pl.LightningModule):
 
         return loss
     
-    def plt_wandb_bbox(self, preds: torch.Tensor, images: List[np.ndarray], 
-                    box_captions: List[List[str]]=None, ground_truth_boxes=None, ground_truth_labels=None):
+    def plt_wandb_bbox(self, 
+                    preds: torch.Tensor, 
+                    images: List[np.ndarray], 
+                    box_captions: List[List[str]]=None, 
+                    ground_truth_boxes=None, 
+                    ground_truth_labels=None,
+                    ground_truth_captions: List[List[str]]=None, 
+        ):
         batch_boxes = []
         
         for i in range(len(preds)):
@@ -226,8 +234,9 @@ class COCO_EfficientDet(pl.LightningModule):
                             },
                             "class_id" : cls + 1,
                             "domain" : "pixel",
+                            "box_caption" : ground_truth_captions[i][j] if ground_truth_captions else None,
                         }
-                        for box, cls in zip(ground_truth_boxes[i], ground_truth_labels[i])
+                        for j, (box, cls) in enumerate(zip(ground_truth_boxes[i], ground_truth_labels[i]))
                     ],
                     "class_labels": CLASS_NAME,
                 }
@@ -501,7 +510,7 @@ class VisGenome_EfficientDet(COCO_EfficientDet):
             tmp, 
         )
 
-        if batch_idx < 3 and hasattr(self.logger, 'log_image'):
+        if batch_size * batch_idx < 20 and hasattr(self.logger, 'log_image'):
             gt_boxes = [
                 boxes[boxes.max(dim=-1).values >= 0].cpu().to(torch.int32).numpy().tolist() 
                 for boxes in gt_boxes
@@ -589,15 +598,18 @@ class VisGenome_FuseDet(COCO_EfficientDet):
 
         return loss
     
+    # @pysnooper.snoop()
     def validation_step(self, batch, batch_idx):
         inputs, que_emb, labels, scales, pads, extra = batch
-        sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
         
-        preds, anchors = self.model(inputs, que_emb, detect=True)
+        preds, _ = self.model(inputs, que_emb, detect=True)
         device = preds.device
         batch_size = preds.size(0)
 
-        # nms_preds, nms_captions = self.nms(torch.cat([pred_boxes, scores], dim=-1), pred_meta=captions)
+        ks = torch.topk(preds[..., 4], k=max(100, self.max_det), dim=-1).indices
+        preds = [p[k] for p, k in zip(preds, ks)]
+        preds = torch.stack(preds, dim=0)
+
         nms_preds = self.nms(preds)
         region_captions: List[str] = extra['phrases']
         region_captions = [join_cap.split('&&') for join_cap in region_captions]
@@ -618,17 +630,20 @@ class VisGenome_FuseDet(COCO_EfficientDet):
             tmp, 
         )
 
-        if batch_idx < 3 and hasattr(self.logger, 'log_image'):
+        if batch_size * batch_idx < 20 and hasattr(self.logger, 'log_image'):
             gt_boxes = [
-                boxes[boxes.max(dim=-1).values >= 0].cpu().to(torch.int32).numpy().tolist() 
+                boxes[boxes.sum(dim=-1) >= 0].cpu().to(torch.int32).numpy().tolist() 
                 for boxes in gt_boxes
             ]
             gt_labels = [[0] * len(gt_boxes[i]) for i in range(len(gt_boxes))]
             
             np_imgs = [img.cpu().numpy() for img in extra['image_numpy']]
             self.plt_wandb_bbox(
-                nms_preds, np_imgs, box_captions=nms_captions, 
-                ground_truth_boxes=gt_boxes, ground_truth_labels=gt_labels
+                nms_preds, np_imgs, 
+                box_captions=nms_captions, 
+                ground_truth_boxes=gt_boxes, 
+                ground_truth_labels=gt_labels,
+                ground_truth_captions=region_captions,
             )
     
     def validation_epoch_end(self, val_step):
