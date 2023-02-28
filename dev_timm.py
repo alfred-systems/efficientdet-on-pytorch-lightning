@@ -1,15 +1,15 @@
 import timm
 import torch
 
-name = "hf_hub:timm/vit_base_patch16_clip_384.laion2b_ft_in12k_in1k"
-name = "convnext_base.clip_laion2b"
-name = "efficientnet_b0"
-model = timm.create_model(name, pretrained=True, features_only=True)
-X = torch.randn(2, 3, 512, 512) 
-out = model(X)
-print([o.shape for o in out])
-breakpoint()
-print(out)
+# name = "hf_hub:timm/vit_base_patch16_clip_384.laion2b_ft_in12k_in1k"
+# name = "convnext_base.clip_laion2b"
+# name = "efficientnet_b0"
+# model = timm.create_model(name, pretrained=True, features_only=True)
+# X = torch.randn(2, 3, 512, 512) 
+# out = model(X)
+# print([o.shape for o in out])
+# breakpoint()
+# print(out)
 """
 name = "convnext_base.clip_laion2b"
 (Pdb) p [o.shape for o in out]
@@ -61,3 +61,43 @@ def check_coco_val_json():
         plt.show()
 
         input('enter...')
+
+def check_vg_anno_json():
+    import os
+    import json
+    from collections import defaultdict
+    from PIL import Image
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+
+
+    with open("/home/ron/Downloads/region_descriptions.json") as f:
+        anno = f.read()
+
+    anno_json = json.loads(anno)
+    pred_by_img = defaultdict(list)
+
+    # for k, preds in pred_by_img.items():
+    img_id = 1
+    path = os.path.join("/home/ron/Downloads/", f"{img_id}.jpg")
+    pil_img = Image.open(path)
+
+    img_reg = [a for a in anno_json if a['id'] == img_id][0]
+
+    # Create figure and axes
+    fig, ax = plt.subplots()
+    # Display the image
+    ax.imshow(pil_img)
+
+    for region in img_reg['regions']:
+        x, y, w, h = region['x'], region['y'], region['width'], region['height']
+        # Create a Rectangle patch
+        rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
+
+        # Add the patch to the Axes
+        ax.add_patch(rect)
+    plt.show()
+
+    input('enter...')
+
+check_vg_anno_json()

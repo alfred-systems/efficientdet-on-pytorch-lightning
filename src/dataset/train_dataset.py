@@ -143,6 +143,34 @@ class COCO_Detection(VisionDataset):
 
     def __len__(self):
         return len(self.ids)
+    
+    @staticmethod
+    def make_mini_batch(
+        sample
+    ) -> Tuple[Tensor, Tensor]:
+
+        images, labels, target_nums = [], [], []
+
+        zero_labels = []
+        max_target_num = 0
+
+        for image, label in sample:
+            images.append(image)
+            labels.append(label)
+            target_num = label.size(0)
+            target_nums.append(target_num)
+            max_target_num = max(max_target_num, target_num)
+
+        for label in labels:
+            target_num = label.size(0)
+            zero_fill = torch.zeros((max_target_num - target_num, label.size(1)), dtype=label.dtype, device=label.device)
+            zero_label = torch.cat((label, zero_fill), dim=0)
+            zero_labels.append(zero_label)
+
+        images = torch.stack(images)
+        labels = torch.stack(zero_labels)
+
+        return images, labels
 
     def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
         coco = self.coco

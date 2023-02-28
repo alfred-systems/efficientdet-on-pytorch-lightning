@@ -19,6 +19,7 @@ trainer:
     pl_module: Laion400m_EfficientDet
   Trainer:
     accumulate_grad_batches: 2
+    limit_train_batches: 0.1
 
 model:
   model:

@@ -43,7 +43,7 @@ def dataset_sanity():
     import matplotlib.pyplot as plt
     # from src.dataset.val_dataset import COCO_Detection
     from src.dataset.val_dataset import Validate_Detection
-    from src.dataset.bbox_augmentor import debug_augmentor
+    from src.dataset.bbox_augmentor import debug_augmentor, bbox_safe_augmentor
     from src.dataset.train_dataset import Laion400M, VisualGenome, VisualGenomeFuseDet
 
     # augmentor = debug_augmentor(512)
@@ -58,7 +58,7 @@ def dataset_sanity():
     dataset = VisualGenomeFuseDet(
         "/home/ron_zhu/visual_genome/VG_100K", 
         "/home/ron_zhu/visual_genome/region_descriptions.json", 
-        debug_augmentor(384),
+        bbox_safe_augmentor(384),
         split='val'
     )
 
@@ -69,7 +69,7 @@ def dataset_sanity():
     for batch in test_loader:
         image = batch[0]
         extra = batch[-1]
-        print(extra)
+        # print(extra)
         breakpoint()
     
     for i in range(10):

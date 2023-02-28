@@ -21,6 +21,7 @@ def train(config_name=None, **kwargs):
         from src.dataset.train_dataset import COCO_Detection, Laion400M, VisualGenome, VisualGenomeFuseDet
         from src.dataset.val_dataset import Validate_Detection
         from src.dataset.bbox_augmentor import default_augmentor, bbox_safe_augmentor
+        from src.dataset.utils import make_mini_batch
         from torch.utils.data import DataLoader
 
         from src.utils.config_trainer import Config_Trainer
@@ -50,8 +51,10 @@ def train(config_name=None, **kwargs):
             background_class=use_background_class,
             freeze_backbone=freeze_backbone)
         # augmentor
-        # augmentor = default_augmentor(pl_model.model.img_size)
-        augmentor = bbox_safe_augmentor(pl_model.model.img_size)
+        if cfg.trainer.Task.pl_module == 'VisGenome_FuseDet':
+            augmentor = bbox_safe_augmentor(pl_model.model.img_size)
+        else:
+            augmentor = default_augmentor(pl_model.model.img_size)
 
         # dataset and dataloader
         pl_data = {
@@ -95,7 +98,7 @@ def train(config_name=None, **kwargs):
         with logger.catch(reraise=True):
             if 'overfit_batches' not in cfg.trainer.Trainer:
                 wb_logger = Another_WandbLogger(**cfg.log)
-                trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=11)
+                trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=101)
 
                 wb_logger.watch(pl_model)
                 # run training

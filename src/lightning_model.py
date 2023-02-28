@@ -216,10 +216,13 @@ class COCO_EfficientDet(pl.LightningModule):
                     },
                     "class_id" : cls + 1,  # NOTE: detector don't have background class, so all class ids is shifted forward by 1
                     # optionally caption each box with its class and score
-                    "box_caption" : box_captions[i][j] if box_captions else None,
+                    "box_caption" : box_captions[i][j] if box_captions else CLASS_NAME[cls + 1],
                     "domain" : "pixel",
                     "scores" : { "score" : int(100 * score) }
                 })
+            results = {
+                "predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME},
+            }
             
             ground_truth = None
             if ground_truth_boxes is not None and ground_truth_labels is not None:
@@ -234,16 +237,15 @@ class COCO_EfficientDet(pl.LightningModule):
                             },
                             "class_id" : cls + 1,
                             "domain" : "pixel",
-                            "box_caption" : ground_truth_captions[i][j] if ground_truth_captions else None,
+                            "box_caption" : ground_truth_captions[i][j] if ground_truth_captions else CLASS_NAME[cls + 1],
                         }
                         for j, (box, cls) in enumerate(zip(ground_truth_boxes[i], ground_truth_labels[i]))
                     ],
                     "class_labels": CLASS_NAME,
-                }
-            batch_boxes.append({
-                "predictions": {"box_data": json_boxes, "class_labels": CLASS_NAME},
-                "ground_truths": ground_truth
-            })
+                }            
+                results["ground_truths"] = ground_truth
+            
+            batch_boxes.append(results)
         
         self.logger.log_image(key="validation-step-detect", images=images, step=self.global_step, boxes=batch_boxes)
     
@@ -295,6 +297,10 @@ class COCO_EfficientDet(pl.LightningModule):
             self.plt_wandb_bbox(preds, images)
         
         self.update_mean_ap(preds, scales, pads, extra)
+        
+        # for i, (scale, pad) in enumerate(zip(scales, pads)):
+        #     preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
+        #     preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
         return ids, preds
 
 

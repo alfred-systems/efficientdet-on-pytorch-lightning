@@ -119,6 +119,7 @@ def convert_bbox(
         before: str,
         after: str
 ) -> Tensor:
+    bbox = bbox.clone()
 
     if before == 'cxcywh':
         if after == 'xywh':
@@ -179,6 +180,7 @@ def untransform_bbox(
         padding: tuple,
         format: str = 'xywh'
 ) -> Tensor:
+    bbox = bbox.clone()
 
     if format == 'cxcywh' or format == 'xywh':
         x = bbox[..., 0]
