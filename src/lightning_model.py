@@ -197,10 +197,10 @@ class COCO_EfficientDet(pl.LightningModule):
         batch_boxes = []
         
         for i in range(len(preds)):
-            preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
+            pred_pt = convert_bbox(preds[i], 'cxcywh', 'xywh')
             
             json_boxes = []
-            pred_pt = preds[i].cpu().numpy()
+            pred_pt = pred_pt.cpu().numpy()
             box_pt = pred_pt[..., :4].astype(np.int32).tolist()
             for j, (box, pred) in enumerate(zip(box_pt, pred_pt)):
                 score = pred[4]
@@ -254,10 +254,9 @@ class COCO_EfficientDet(pl.LightningModule):
         metrix_tar = []
 
         for i, (scale, pad) in enumerate(zip(scales, pads)):
-            preds[i] = convert_bbox(preds[i], 'cxcywh', 'xywh')
-            preds[i] = untransform_bbox(preds[i], scale, pad, 'xywh')
+            pred_pt = convert_bbox(preds[i], 'cxcywh', 'xywh')
+            pred_pt = untransform_bbox(pred_pt, scale, pad, 'xywh')
             
-            pred_pt = preds[i]
             boxes_pt = pred_pt[..., :4].to(torch.int32)
             scores = pred_pt[:, 4]
             clses = pred_pt[:, 5].to(torch.int32)
@@ -612,7 +611,7 @@ class VisGenome_FuseDet(COCO_EfficientDet):
         device = preds.device
         batch_size = preds.size(0)
 
-        ks = torch.topk(preds[..., 4], k=max(100, self.max_det), dim=-1).indices
+        ks = torch.topk(preds[..., 4], k=max(500, self.max_det), dim=-1).indices
         preds = [p[k] for p, k in zip(preds, ks)]
         preds = torch.stack(preds, dim=0)
 

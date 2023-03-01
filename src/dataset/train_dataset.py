@@ -303,7 +303,7 @@ class VisualGenome(VisionDataset):
     def __len__(self):
         return len(self.region_anno_subset)
 
-    def subsample(self, boxes, th=0.75):
+    def subsample(self, boxes, th=0.7):
         """
         There are many overlaped bbox for the same object in visual genome, used to
         desction different attribute/state of the same object.
@@ -320,10 +320,10 @@ class VisualGenome(VisionDataset):
             overlap = []  # include "i" itself
             close = []
             for j, iou in enumerate(iou_1toN):
-                if iou >= 0.9:
+                if iou >= 0.8:
                     assign[j] = 0
                     overlap.append(j)
-                elif 0.9 > iou >= th:
+                elif 0.8 > iou >= th:
                     assign[j] = 0
                     close.append(j)
             
@@ -331,6 +331,16 @@ class VisualGenome(VisionDataset):
             if close:
                 assign[random.choice(close)] = 1
         return assign
+
+    def keep_similiar_captions(self, src_emb, all_emb):
+        if isinstance(all_emb, list):
+            all_emb = torch.stack(all_emb)
+        all_emb = F.normalize(all_emb, dim=1)
+        src_emb = F.normalize(src_emb, dim=0)
+
+        sim = all_emb @ src_emb.unsqueeze(dim=0).T
+        alikes = sim > 0.93
+        return alikes
     
     def __getitem__(self, index: int):
         meta = self.region_anno_subset[index]
@@ -403,7 +413,7 @@ class VisualGenome(VisionDataset):
 
 class VisualGenomeFuseDet(VisualGenome):
 
-    max_det = 1
+    max_det = 100
     
     def __getitem__(self, index: int):
         meta = self.region_anno_subset[index]
@@ -431,31 +441,43 @@ class VisualGenomeFuseDet(VisualGenome):
             phr_embed.append(embed_table[reg_id].to(torch.float32))
             bboxes.append([x, y, w, h])
         
-        pick_one = random.randint(0, len(bboxes) - 1)
-        bboxes = [bboxes[pick_one]]
-        phr_embed = [phr_embed[pick_one]]
-        phrases = [phrases[pick_one]]
-        # tmp = copy.deepcopy(bboxes)
-
         if self.augmentor:
             category_ids = [0] * len(bboxes)  # TODO: decide to make use of category label or not
             # HACK: we use category_ids's slot to place bbox embedding, so we only keep embeds that still inside the image after augmentation
-            transform = self.augmentor(np_image, bboxes, phr_embed)  
-            image, bboxes, phr_embed = transform['image'], transform['bboxes'], transform['category_ids']
+            box_idx = list(range(len(bboxes)))
+            transform = self.augmentor(np_image, bboxes, box_idx)
+            image, bboxes, box_idx = transform['image'], transform['bboxes'], transform['category_ids']
+            phrases = [phrases[id] for id in box_idx]
+            phr_embed = [phr_embed[id] for id in box_idx]
         else:
             image = cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)
             image = np.transpose(image, (2, 0, 1))
             image = torch.from_numpy(image)
         
-        for _ in range(len(bboxes), self.max_det):
-            bboxes.append([-1, -1, -1, -1])
-            phr_embed.append(torch.zeros([self.EMBED_SIZE], dtype=torch.float32))
-            # phr_embed.append(torch.zeros_like(phr_embed[0]))
+        assign = self.subsample(copy.deepcopy(bboxes))
+        bboxes = [b for b, a in zip(bboxes, assign) if a == 1]
+        phr_embed = [b for b, a in zip(phr_embed, assign) if a == 1]
+        phrases = [b for b, a in zip(phrases, assign) if a == 1]
+
+        # NOTE: one query phrase can have multiple matching boxes
+        pick_one = random.randint(0, len(bboxes) - 1)
+        assign = self.keep_similiar_captions(phr_embed[pick_one], phr_embed)
+        phr_embed = phr_embed[pick_one]
+        bboxes = [b for b, a in zip(bboxes, assign) if a]
+        phrases = [b for b, a in zip(phrases, assign) if a]
         
-        fixed_one_cls_onehot = torch.ones([1, 1], dtype=torch.float32)
+        num_box = len(bboxes)
+        pad_box = 0
+        for _ in range(num_box, self.max_det + 1):
+            bboxes.append([-1, -1, -1, -1])
+            pad_box += 1
+        
+        fixed_one_cls_onehot = torch.cat([
+            torch.ones([num_box, 1], dtype=torch.float32),
+            torch.zeros([pad_box, 1], dtype=torch.float32),
+        ], dim=0)
         bboxes = torch.tensor(bboxes, dtype=torch.float32)  # (n, 4)
         labels = torch.cat([bboxes, fixed_one_cls_onehot], dim=-1)
-        phr_embed = phr_embed[0]
 
         if self.split == 'train':
             return image, phr_embed, labels
