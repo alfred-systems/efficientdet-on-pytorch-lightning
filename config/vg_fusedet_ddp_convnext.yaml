@@ -3,12 +3,13 @@ defaults:
   - trainer: default
   - _self_
 
-freeze_backbone: false
+freeze_backbone: true
 use_background_class: false
-batch_size: 12
+batch_size: 48
 num_workers: 2
-# ckpt_path: tmp.ckpt
-load_ckpt_weight: ./log/COCO_EfficientDet/1rl3pd0c/checkpoints/epoch=68-step=295182.ckpt
+check_val_every_n_epoch: 4
+ckpt_path: tmp.ckpt
+# load_ckpt_weight: ./log/COCO_EfficientDet/1rl3pd0c/checkpoints/epoch=68-step=295182.ckpt
 
 trainer:
   Task:
@@ -38,7 +39,7 @@ model:
 
   nms:
     iou_th: 0.5
-    max_det: 20
+    max_det: 50
 
   optimizer:
     lr: 0.0001
@@ -46,7 +47,7 @@ model:
 
 log:
   name: visual-genome-fusedet-convnext
-  project: COCO_EfficientDet
+  project: VisualGenomeCLIP
   save_dir: ./log
   artifact_type: find_lr
   artifact_name: visual-genome-fusedet-convnext

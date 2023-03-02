@@ -7,8 +7,8 @@ freeze_backbone: true
 use_background_class: false
 batch_size: 24
 num_workers: 2
-ckpt_path: ./log/COCO_EfficientDet/3dmh6bqa/checkpoints/epoch=31-step=153982.ckpt
-# load_ckpt_weight: laion-convnext=det-pretrain.ckpt
+# ckpt_path: ./log/COCO_EfficientDet/3dmh6bqa/checkpoints/epoch=31-step=153982.ckpt
+load_ckpt_weight: ./log/COCO_EfficientDet/1msqx672/checkpoints/epoch=88-step=397828.ckpt
 
 trainer:
   Task:
