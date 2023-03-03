@@ -98,14 +98,17 @@ def train(config_name=None, **kwargs):
         with logger.catch(reraise=True):
             if 'overfit_batches' not in cfg.trainer.Trainer:
                 wb_logger = Another_WandbLogger(**cfg.log)
-                trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=101)
+                trainer = pl.Trainer(**cfg_trainer, logger=wb_logger, num_sanity_val_steps=1)
 
                 wb_logger.watch(pl_model)
                 # run training
-                if 'ckpt_path' in cfg:
-                    trainer.fit(pl_model, train_loader, val_loader, ckpt_path=cfg.ckpt_path)
-                else:
-                    trainer.fit(pl_model, train_loader, val_loader)
+                try:
+                    if 'ckpt_path' in cfg:
+                        trainer.fit(pl_model, train_loader, val_loader, ckpt_path=cfg.ckpt_path)
+                    else:
+                        trainer.fit(pl_model, train_loader, val_loader)
+                except KeyboardInterrupt:
+                    trainer.save_checkpoint("interrupt.ckpt")
             else:
                 trainer = pl.Trainer(**cfg_trainer, num_sanity_val_steps=1, check_val_every_n_epoch=10)
                 trainer.fit(pl_model, train_loader, val_loader)

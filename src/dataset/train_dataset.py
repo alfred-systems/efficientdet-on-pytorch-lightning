@@ -110,7 +110,7 @@ CLASS_NAME = {
     79: 'hair drier',
     80: 'toothbrush',
 }
-
+GT_CLASS_NAME = {k: f'gt_{v}' for k, v in CLASS_NAME.items()}
 
 class COCO_Detection(VisionDataset):
 
@@ -303,7 +303,7 @@ class VisualGenome(VisionDataset):
     def __len__(self):
         return len(self.region_anno_subset)
 
-    def subsample(self, boxes, th=0.7):
+    def subsample(self, boxes, th=0.4):
         """
         There are many overlaped bbox for the same object in visual genome, used to
         desction different attribute/state of the same object.
@@ -317,19 +317,26 @@ class VisualGenome(VisionDataset):
         for i, iou_1toN in enumerate(iou_mtx):
             if assign[i] > -1:
                 continue
+            
             overlap = []  # include "i" itself
             close = []
+            abort = False
+            
             for j, iou in enumerate(iou_1toN):
-                if iou >= 0.8:
+                if iou >= th and assign[j] > -1:
+                    abort = True
+                    break
+                if iou >= 0.7:
                     assign[j] = 0
                     overlap.append(j)
-                elif 0.8 > iou >= th:
+                elif 0.7 > iou >= th:
                     assign[j] = 0
                     close.append(j)
             
-            assign[random.choice(overlap)] = 1
-            if close:
-                assign[random.choice(close)] = 1
+            if not abort:
+                assign[random.choice(overlap)] = 1
+                if close:
+                    assign[random.choice(close)] = 1
         return assign
 
     def keep_similiar_captions(self, src_emb, all_emb):

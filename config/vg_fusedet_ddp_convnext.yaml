@@ -6,9 +6,8 @@ defaults:
 freeze_backbone: true
 use_background_class: false
 batch_size: 48
-num_workers: 2
-check_val_every_n_epoch: 4
-ckpt_path: tmp.ckpt
+num_workers: 4
+ckpt_path: ./log/VisualGenomeCLIP/17nuauqs/checkpoints/epoch=1-step=4278.ckpt
 # load_ckpt_weight: ./log/COCO_EfficientDet/1rl3pd0c/checkpoints/epoch=68-step=295182.ckpt
 
 trainer:
@@ -22,6 +21,7 @@ trainer:
     precision: 16
     # overfit_batches: 36
     limit_train_batches: 1.0
+    check_val_every_n_epoch: 4
 
 model:
   model:

@@ -269,7 +269,7 @@ class ClipFuseDet_Head(nn.Module):
         )
         
         self.classifier = Classifier(
-            num_levels, depth, width, num_anchors, 1, 
+            num_levels, depth + 2, width, num_anchors, 1, 
             Act, background_class=False
         )
         self.regressor = Regressor(num_levels, depth, width, num_anchors, Act)

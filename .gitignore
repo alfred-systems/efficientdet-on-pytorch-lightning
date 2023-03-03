@@ -4,3 +4,5 @@ outputs
 log
 result
 lightning_logs
+*.ckpt
+*.pth

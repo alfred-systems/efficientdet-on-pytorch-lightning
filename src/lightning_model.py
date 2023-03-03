@@ -14,7 +14,7 @@ from src.dataset.metric import Evaluate_COCO
 from src.model.efficientdet import EfficientDet, ConvNeXtDet, ClipDet, ClipFuseDet
 from src.loss.focal_loss import FocalL1_Loss, ContrastiveL1_Loss, clip_loss
 from src.utils.nms.hard_nms import Hard_NMS
-from src.dataset.train_dataset import CLASS_NAME
+from src.dataset.train_dataset import CLASS_NAME, GT_CLASS_NAME
 
 
 
@@ -237,11 +237,11 @@ class COCO_EfficientDet(pl.LightningModule):
                             },
                             "class_id" : cls + 1,
                             "domain" : "pixel",
-                            "box_caption" : ground_truth_captions[i][j] if ground_truth_captions else CLASS_NAME[cls + 1],
+                            "box_caption" : ground_truth_captions[i][j] if ground_truth_captions else GT_CLASS_NAME[cls + 1],
                         }
                         for j, (box, cls) in enumerate(zip(ground_truth_boxes[i], ground_truth_labels[i]))
                     ],
-                    "class_labels": CLASS_NAME,
+                    "class_labels": GT_CLASS_NAME,
                 }            
                 results["ground_truths"] = ground_truth
             
