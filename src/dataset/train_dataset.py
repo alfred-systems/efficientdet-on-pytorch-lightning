@@ -303,13 +303,14 @@ class VisualGenome(VisionDataset):
     def __len__(self):
         return len(self.region_anno_subset)
 
-    def subsample(self, boxes, th=0.4):
+    def subsample(self, boxes, th=0.2):
         """
         There are many overlaped bbox for the same object in visual genome, used to
         desction different attribute/state of the same object.
         So we need to avoid using multiple overlaped boxes at once in order to make 
         contrastive loss work.
         """
+        assert th <= 0.5
         pt_boxes = torch.tensor(boxes).unsqueeze(dim=0)
         iou_mtx = batch_iou(pt_boxes, pt_boxes, format='xywh')[0]
         assign = [-1] * len(boxes)  # -1 for to be assign, 0 for discarded, 1 for assigned as label
@@ -326,10 +327,10 @@ class VisualGenome(VisionDataset):
                 if iou >= th and assign[j] > -1:
                     abort = True
                     break
-                if iou >= 0.7:
+                if iou >= 0.5:
                     assign[j] = 0
                     overlap.append(j)
-                elif 0.7 > iou >= th:
+                elif 0.5 > iou >= th:
                     assign[j] = 0
                     close.append(j)
             
