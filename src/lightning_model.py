@@ -2,6 +2,8 @@ import datetime
 import pysnooper
 from collections import defaultdict
 from pprint import pprint
+
+import open_clip
 from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -581,6 +583,23 @@ class VisGenome_FuseDet(COCO_EfficientDet):
     """
     
     """
+    
+    TEXT_MODEL = "convnext_base_w"
+
+    @property
+    def text_encoder(self):
+        if not hasattr(self, '_text_encoder'):
+            model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(
+                self.TEXT_MODEL, pretrained='laion2B-s13B-b82K'
+            )
+            self._text_encoder = model.to(self.device)
+        return self._text_encoder
+    
+    @property
+    def tokenizer(self):
+        if not hasattr(self, '_tokenizer'):
+            self._tokenizer = open_clip.get_tokenizer(self.TEXT_MODEL)
+        return self._tokenizer
 
     def configure_model(self):
         model = ClipFuseDet(self.coeff, 
@@ -590,6 +609,11 @@ class VisGenome_FuseDet(COCO_EfficientDet):
     
     def training_step(self, batch, batch_idx):
         inputs, que_emb, labels = batch
+        
+        if isinstance(que_emb, list) and isinstance(que_emb[0], str):
+            input_ids = self.tokenizer(que_emb).to(self.device)
+            que_emb = self.text_encoder.encode_text(input_ids)
+        
         preds, anchors = self.model(inputs, que_emb, detect=False)
         sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')
         
@@ -606,6 +630,10 @@ class VisGenome_FuseDet(COCO_EfficientDet):
     # @pysnooper.snoop()
     def validation_step(self, batch, batch_idx):
         inputs, que_emb, labels, scales, pads, extra = batch
+
+        if isinstance(que_emb, list) and isinstance(que_emb[0], str):
+            input_ids = self.tokenizer(que_emb).to(self.device)
+            que_emb = self.text_encoder.encode_text(input_ids)
         
         preds, _ = self.model(inputs, que_emb, detect=True)
         device = preds.device
