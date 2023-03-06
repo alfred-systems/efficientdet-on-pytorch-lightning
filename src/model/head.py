@@ -260,12 +260,34 @@ class ClipFuseDet_Head(nn.Module):
         if background_class:
             logger.warning("ClipDet_Head will alway using sigmoid activation, hence ignore background_class parameter.")
         
-        self.vl_proj = torch.nn.Conv2d(
-            width + embed_size, 
-            width, 
-            kernel_size=1, 
-            padding=0,
-            bias=False
+        self.vl_proj = torch.nn.Sequential(
+            torch.nn.Conv2d(
+                width + embed_size, 
+                width + embed_size, 
+                kernel_size=1, 
+                padding=0,
+                bias=True
+            ),
+            torch.nn.BatchNorm2d(width + embed_size),
+            torch.nn.ReLU(),
+            
+            torch.nn.Conv2d(
+                width + embed_size, 
+                width + embed_size, 
+                kernel_size=1, 
+                padding=0,
+                bias=True
+            ),
+            torch.nn.BatchNorm2d(width + embed_size),
+            torch.nn.ReLU(),
+            
+            torch.nn.Conv2d(
+                width + embed_size, 
+                width, 
+                kernel_size=1, 
+                padding=0,
+                bias=True
+            ),
         )
         
         self.classifier = Classifier(
@@ -283,6 +305,7 @@ class ClipFuseDet_Head(nn.Module):
         cls_features = []
         for feat in features:
             b, c, h, w = feat.shape
+            query_embed = F.normalize(query_embed, dim=-1)
             query_4d = query_embed.unsqueeze(-1).unsqueeze(-1)
             query_4d = query_4d.repeat(1, 1, h, w)
             feat = self.vl_proj(torch.cat([feat, query_4d], dim=1))
