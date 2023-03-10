@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import argparse
 import torch
 from loguru import logger
@@ -79,28 +80,55 @@ def dataset_sanity():
 
 
 def inferece():
-    from src.lightning_model import COCO_EfficientDet
+    from src.lightning_model import COCO_EfficientDet, VisGenome_FuseDet
     from src.dataset.val_dataset import Validate_Detection
+    from src.dataset.train_dataset import Laion400M, VisualGenome, VisualGenomeFuseDet
+    from src.dataset.bbox_augmentor import debug_augmentor, bbox_safe_augmentor
 
-    pl_model = COCO_EfficientDet.load_from_checkpoint("./log/COCO_EfficientDet/n7ulowov/checkpoints/epoch=1-step=7394.ckpt")
+    pl_model = VisGenome_FuseDet.load_from_checkpoint("last.ckpt")
     print('model loaded')
-    pl_model = pl_model.to('cuda')
-    test_set = Validate_Detection("/home/ron_zhu/efficlipdet/sample", pl_model.model.img_size, [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]])
-    test_loader = DataLoader(test_set, batch_size=1)
-    for batch in test_loader:
-        print(batch[0])
-        predict = pl_model(batch[1], detect=True)[0]
-        box = predict[..., :4]
-        cls = predict[..., 4:]
-        # cls = torch.nn.functional.softmax(cls, dim=-1)
-        # cls = torch.nn.functional.sigmoid(cls)
-        for a, b in zip(cls[0], box[0]):
-            # print(a)
-            breakpoint()
-            if a.max() > 0.6:
-                print(b.int())
-                # print(a)
-        print(predict.shape)
+    device = 'cpu'
+    pl_model = pl_model.to(device).to(torch.float16)
+    pl_model.eval()
+    
+    # test_set = Validate_Detection("/home/ron_zhu/efficlipdet/sample", pl_model.model.img_size, [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]])
+    test_set = VisualGenomeFuseDet(
+        "/home/ron_zhu/visual_genome/VG_100K", 
+        "/home/ron_zhu/visual_genome/region_descriptions.json", 
+        bbox_safe_augmentor(512),
+        split='val'
+    )
+    for batch_size in [1, 1, 4, 8, 16, 32]:
+        test_loader = DataLoader(test_set, batch_size=batch_size)
+
+        with torch.no_grad():
+            times = []
+            for i, batch in enumerate(test_loader):
+                if i > 40: break
+                # print(batch[0])
+                t1 = time.time()
+                img = batch[0].to(device).to(torch.float16)
+                text = batch[1].to(device).to(torch.float16)
+
+                predict = pl_model(img, text, detect=True)[0]
+                
+                # box = predict[..., :4]
+                # cls = predict[..., 4:]
+                # cls = torch.nn.functional.softmax(cls, dim=-1)
+                # cls = torch.nn.functional.sigmoid(cls)
+                # for a, b in zip(cls[0], box[0]):
+                #     # print(a)
+                #     breakpoint()
+                #     if a.max() > 0.6:
+                #         print(b.int())
+                #         # print(a)
+                # print(predict.shape)
+                
+                td = time.time() - t1
+                times.append(td)
+        speed_ms = sum(times) / len(times) * 1000
+        print(f'batch_size: {batch_size}, inference time per bactch ~ ', f"{speed_ms:.4f} ms")
+
     # print(pl_model)
 
 @logger.catch
@@ -147,6 +175,6 @@ def dataset_warmup():
     
 if __name__ == "__main__":
     # test()
-    # inferece()
-    dataset_sanity()
+    inferece()
+    # dataset_sanity()
     # dataset_warmup()

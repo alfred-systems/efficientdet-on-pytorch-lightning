@@ -15,6 +15,10 @@ Callbacks:
 
   LearningRateMonitor:
     logging_interval: step
+  ModelCheckpoint:
+    every_n_epochs: 1
+    save_last: true
+    verbose: true
 
 
 Profiler:

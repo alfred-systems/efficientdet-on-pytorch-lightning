@@ -606,6 +606,9 @@ class VisGenome_FuseDet(COCO_EfficientDet):
                         background_class=self.background_class,
                         freeze_backbone=self.freeze_backbone)
         return model
+
+    def forward(self, input: torch.Tensor, que_emb: torch.Tensor, detect: bool, **kwargs):
+        return self.model(input, que_emb, detect=detect,  **kwargs)
     
     def training_step(self, batch, batch_idx):
         inputs, que_emb, labels = batch

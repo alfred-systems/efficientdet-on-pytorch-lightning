@@ -7,8 +7,8 @@ freeze_backbone: true
 use_background_class: false
 batch_size: 48
 num_workers: 4
-ckpt_path: ./log/VisualGenomeCLIP/17nuauqs/checkpoints/epoch=1-step=4278.ckpt
-# load_ckpt_weight: ./log/COCO_EfficientDet/1rl3pd0c/checkpoints/epoch=68-step=295182.ckpt
+ckpt_path: last.ckpt
+# load_ckpt_weight: ./log/COCO_EfficientDet/1msqx672/checkpoints/epoch=88-step=397828.ckpt
 
 trainer:
   Task:

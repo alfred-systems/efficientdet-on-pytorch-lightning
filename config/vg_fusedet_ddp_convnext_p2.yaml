@@ -5,10 +5,10 @@ defaults:
 
 freeze_backbone: false
 use_background_class: false
-batch_size: 16
-num_workers: 2
-# ckpt_path: ./log/VisualGenomeCLIP/17nuauqs/checkpoints/epoch=1-step=4278.ckpt
-load_ckpt_weight: ./log/VisualGenomeCLIP/1qyldkfu/checkpoints/epoch=79-step=171120.ckpt
+batch_size: 24
+num_workers: 3
+# ckpt_path: last.ckpt
+load_ckpt_weight: last.ckpt
 
 trainer:
   Task:
@@ -42,7 +42,7 @@ model:
     max_det: 50
 
   optimizer:
-    lr: 0.0001
+    lr: 0.00001
 
 
 log:

@@ -151,6 +151,24 @@ def bbox_safe_augmentor(
     return aug
 
 
+def eval_augmentor(
+        img_size: Union[int, Tuple[int, int]]
+) -> Bbox_Augmentor:
+
+    if isinstance(img_size, tuple):
+        h, w = img_size
+    else:
+        h, w = img_size, img_size
+
+    aug = Bbox_Augmentor(1, 'coco', min_area=0.0, min_visibility=0.05)
+
+    aug.append(A.PadIfNeeded(h, w, border_mode=cv2.BORDER_CONSTANT, value=imagenet_fill(), p=0.5))
+    aug.append(A.Resize(h, w, p=1))
+    aug.make_compose()
+
+    return aug
+
+
 def debug_augmentor(
         img_size: Union[int, Tuple[int, int]]
 ) -> Bbox_Augmentor:

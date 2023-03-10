@@ -20,7 +20,7 @@ def train(config_name=None, **kwargs):
 
         from src.dataset.train_dataset import COCO_Detection, Laion400M, VisualGenome, VisualGenomeFuseDet
         from src.dataset.val_dataset import Validate_Detection
-        from src.dataset.bbox_augmentor import default_augmentor, bbox_safe_augmentor
+        from src.dataset.bbox_augmentor import default_augmentor, bbox_safe_augmentor, eval_augmentor
         from src.dataset.utils import make_mini_batch
         from torch.utils.data import DataLoader
 
@@ -50,11 +50,13 @@ def train(config_name=None, **kwargs):
             val_annFile=cfg.dataset.val.annFile, 
             background_class=use_background_class,
             freeze_backbone=freeze_backbone)
+        
         # augmentor
         if cfg.trainer.Task.pl_module == 'VisGenome_FuseDet':
             augmentor = bbox_safe_augmentor(pl_model.model.img_size)
         else:
             augmentor = default_augmentor(pl_model.model.img_size)
+        eval_transform = eval_augmentor(pl_model.model.img_size)
 
         # dataset and dataloader
         pl_data = {
@@ -75,7 +77,7 @@ def train(config_name=None, **kwargs):
             annFile=cfg.dataset.val.annFile,
             img_size=pl_model.model.img_size,
             dataset_stat=cfg.dataset.dataset_stat,
-            bbox_augmentor=augmentor,
+            bbox_augmentor=eval_transform,
             split='val',
         )
 
