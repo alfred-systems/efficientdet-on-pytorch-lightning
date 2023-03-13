@@ -592,7 +592,7 @@ class VisGenome_FuseDet(COCO_EfficientDet):
             model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(
                 self.TEXT_MODEL, pretrained='laion2B-s13B-b82K'
             )
-            self._text_encoder = model.to(self.device)
+            self._text_encoder = model.to(self.device).to(self.dtype)
         return self._text_encoder
     
     @property
@@ -687,3 +687,16 @@ class VisGenome_FuseDet(COCO_EfficientDet):
             self.log(f'val_{k}', v, sync_dist=True)
             logger.info(f'{k}: {v}')
         self.val_map.reset()
+    
+    def inference_step(self, images, query_input_ids, th=0.2):
+        text_embed = self.text_encoder.encode_text(query_input_ids)
+        preds, _ = self.model(images, text_embed, detect=True)
+        # breakpoint()
+        # preds = preds[preds[..., 4] >= th]
+        print('max: ', preds[..., -1].max())
+        
+        preds = convert_bbox(preds, 'cxcywh', 'xyxy')
+        nms_preds = torch.stack(self.nms(preds))
+        boxes = nms_preds[..., :4]
+        scores = nms_preds[..., 4]
+        return boxes, scores
