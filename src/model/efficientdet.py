@@ -164,13 +164,13 @@ class ConvNeXtDet(RetinaNet_Frame):
         super().__init__(self.img_size, **kwargs)
 
         """
-        'convnext_base.clip_laion2b': _cfg(
-            hf_hub_id='laion/CLIP-convnext_base_w-laion2B-s13B-b82K',
+        'convnext_large_mlp.clip_laion2b_augreg': _cfg(
+            hf_hub_id='laion/CLIP-convnext_large_d-laion2b_s26b_b102k_augreg',
             hf_hub_filename='open_clip_pytorch_model.bin',
             mean=OPENAI_CLIP_MEAN, std=OPENAI_CLIP_STD,
             input_size=(3, 256, 256), pool_size=(8, 8), crop_pct=1.0, num_classes=640),
         """
-        self.backbone = timm.create_model(f"convnext_base.clip_laion2b", pretrained=True, features_only=True)
+        self.backbone = timm.create_model(f"convnext_large_mlp.clip_laion2b_augreg", pretrained=True, features_only=True)
         self.backbone = FeaturePicker(self.backbone, [1, 2, 3])
 
         widths = [128, 256, 512, 1024]
@@ -214,13 +214,13 @@ class ClipDet(RetinaNet_Frame):
         self.freeze_backbone = freeze_backbone
 
         """
-        'convnext_base.clip_laion2b': _cfg(
-            hf_hub_id='laion/CLIP-convnext_base_w-laion2B-s13B-b82K',
+        'convnext_large_mlp.clip_laion2b_augreg': _cfg(
+            hf_hub_id='laion/CLIP-convnext_large_d-laion2b_s26b_b102k_augreg',
             hf_hub_filename='open_clip_pytorch_model.bin',
             mean=OPENAI_CLIP_MEAN, std=OPENAI_CLIP_STD,
             input_size=(3, 256, 256), pool_size=(8, 8), crop_pct=1.0, num_classes=640),
         """
-        self.backbone = timm.create_model(f"convnext_base.clip_laion2b", pretrained=True, features_only=True)
+        self.backbone = timm.create_model(f"convnext_large_mlp.clip_laion2b_augreg", pretrained=True, features_only=True)
         self.backbone = FeaturePicker(self.backbone, [1, 2, 3])
 
         widths = [128, 256, 512, 1024]
@@ -284,14 +284,15 @@ class ClipFuseDet(RetinaNet_Frame):
         super().__init__(self.img_size, freeze_backbone=freeze_backbone, **kwargs)
         self.freeze_backbone = freeze_backbone
 
-        self.backbone = timm.create_model(f"convnext_base.clip_laion2b", pretrained=True, features_only=True)
+        self.backbone = timm.create_model(f"convnext_large_mlp.clip_laion2b_augreg", pretrained=True, features_only=True)
         self.backbone = FeaturePicker(self.backbone, [1, 2, 3])
+        # [(1, 192, 128, 128), (1, 384, 64, 64), (1, 768, 32, 32), (1, 1536, 16, 16)]
 
-        widths = [128, 256, 512, 1024]
+        widths = [192, 384, 768, 1536]
         channels = widths[1:]
 
         self.fpn = BiFPN(num_levels, d_bifpn, channels, w_bifpn, Act=nn.ReLU())
-        self.head = ClipFuseDet_Head(num_levels, d_head, w_head, self.num_anchors, 640, nn.ReLU())
+        self.head = ClipFuseDet_Head(num_levels, d_head, w_head, self.num_anchors, 768, nn.ReLU())
         # self.global_emb_projs = nn.ModuleList([torch.nn.Linear(w_head, 640) for _ in range(3)])
     
     def forward(self, input, query_embed, detect: bool=False):

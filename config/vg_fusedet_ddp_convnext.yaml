@@ -5,9 +5,9 @@ defaults:
 
 freeze_backbone: true
 use_background_class: false
-batch_size: 48
+batch_size: 24
 num_workers: 4
-ckpt_path: last.ckpt
+# ckpt_path: last.ckpt
 # load_ckpt_weight: ./log/COCO_EfficientDet/1msqx672/checkpoints/epoch=88-step=397828.ckpt
 
 trainer:

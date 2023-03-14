@@ -154,7 +154,7 @@ def dataset_warmup():
     # from PIL import Image
 
     # model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(
-    #     Laion400M.MODEL, pretrained='laion2B-s13B-b82K')
+    #     Laion400M.MODEL, pretrained='laion2b_s26b_b102k_augreg')
     # tokenizer = open_clip.get_tokenizer(Laion400M.MODEL)
     # # model = model.to('cuda')
 

@@ -288,8 +288,8 @@ class COCOFuseDet(COCO_Detection):
 
 class VisualGenome(VisionDataset):
     
-    MODEL = "convnext_base_w"
-    EMBED_SIZE = 640
+    MODEL = "convnext_large_d"
+    EMBED_SIZE = 768
     collect_fn = None
     max_det = 300  # NOTE: VG have max 267/ min 3/ avg 50 regions per image
 
@@ -338,7 +338,7 @@ class VisualGenome(VisionDataset):
     def _create_region_embed(self, cache_file: str):
         import open_clip
         
-        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(self.MODEL, pretrained='laion2B-s13B-b82K')
+        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(self.MODEL, pretrained='laion2b_s26b_b102k_augreg')
         tokenizer = open_clip.get_tokenizer(self.MODEL)
         model = model.to('cuda')
         
@@ -593,7 +593,7 @@ class VisualGenomeFuseDet(VisualGenome):
 
 class Laion400M(VisionDataset):
 
-    MODEL = "convnext_base_w"
+    MODEL = "convnext_large_d"
     collect_fn = None
 
     def __init__(self, 
@@ -636,7 +636,7 @@ class Laion400M(VisionDataset):
     def _create_region_embed(self, cache_file: str):
         import open_clip
         
-        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(self.MODEL, pretrained='laion2B-s13B-b82K')
+        model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(self.MODEL, pretrained='laion2b_s26b_b102k_augreg')
         tokenizer = open_clip.get_tokenizer(self.MODEL)
         model = model.to('cuda')
         

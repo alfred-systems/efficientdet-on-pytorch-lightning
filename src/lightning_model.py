@@ -584,13 +584,13 @@ class VisGenome_FuseDet(COCO_EfficientDet):
     
     """
     
-    TEXT_MODEL = "convnext_base_w"
+    TEXT_MODEL = "convnext_large_d"
 
     @property
     def text_encoder(self):
         if not hasattr(self, '_text_encoder'):
             model, preprocess_train, preprocess_val = open_clip.create_model_and_transforms(
-                self.TEXT_MODEL, pretrained='laion2B-s13B-b82K'
+                self.TEXT_MODEL, pretrained='laion2b_s26b_b102k_augreg'
             )
             self._text_encoder = model.to(self.device).to(self.dtype)
         return self._text_encoder
