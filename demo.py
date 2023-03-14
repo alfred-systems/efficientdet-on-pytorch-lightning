@@ -15,6 +15,7 @@
 import time
 from functools import partial
 
+import cv2
 import open_clip
 import torch
 import numpy as np
@@ -26,7 +27,9 @@ from PIL import Image
 from torchvision import transforms
 
 
-from src.lightning_model import COCO_EfficientDet, Laion400m_EfficientDet, VisGenome_EfficientDet, VisGenome_FuseDet
+from src.lightning_model import VisGenome_FuseDet
+from src.dataset.train_dataset import VisualGenomeFuseDet
+from src.dataset.bbox_augmentor import eval_augmentor
 
 
 preprocess = transforms.Compose([
@@ -34,8 +37,10 @@ preprocess = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
 ])
+# preprocess = eval_augmentor(512)
 tokenizer = open_clip.get_tokenizer("convnext_base_w")
 model = VisGenome_FuseDet.load_from_checkpoint("last.ckpt").cuda().to(torch.float16)
+model.eval()
 
 
 def plot_det(input_image, scores, boxes, label, score_threshold = 0.1):
@@ -84,6 +89,8 @@ def sepia(query_text, threshold, input_img, inference=True, plot=True):
 
     input_ids = tokenizer(query_text).to('cuda')
     img_tensor = preprocess(Image.fromarray(input_img))
+    # img_tensor = preprocess(cv2.cvtColor(input_img, cv2.COLOR_RGB2BGR))['image']
+    # img_tensor = preprocess(input_img)['image']
     img_tensor = img_tensor.float().cuda()
     img_tensor = torch.unsqueeze(img_tensor, dim=0)
 
@@ -100,11 +107,9 @@ def sepia(query_text, threshold, input_img, inference=True, plot=True):
     boxes = boxes[0]
     scores = scores[0]
 
-    if plot:
-        score_threshold = 0.1
-        
+    if plot:        
         return plot_det(
-            np.asarray(input_img) / 255, 
+            Image.fromarray(input_img).resize((512, 512)), 
             scores, boxes, query_text, score_threshold=threshold/100)
     else:
         json_obj = []
@@ -127,7 +132,7 @@ with gr.Blocks() as demo:
         with gr.Row():
             with gr.Column():
                 input_ui = [
-                    gr.Text(label="query", value="person, cup, phone, video game  controller, headphone, box"), 
+                    gr.Text(label="query", value="find all objects"), 
                     gr.Slider(10, 100, label='threshold', value=20), 
                     gr.Image()
                 ]
@@ -139,7 +144,7 @@ with gr.Blocks() as demo:
         with gr.Row():
             with gr.Column():
                 json_input_ui = [
-                    gr.Text(label="query", value="person, cup, phone, video game  controller, headphone, box"), 
+                    gr.Text(label="query", value="find all objects"), 
                     gr.Slider(10, 100, label='threshold', value=20), 
                     gr.Image()
                 ]
@@ -150,7 +155,7 @@ with gr.Blocks() as demo:
         with gr.Row():
             with gr.Column():
                 live_input_ui = [
-                    gr.Text(label="query", value="person, cup, phone, video game  controller, headphone, box"), 
+                    gr.Text(label="query", value="find all objects"), 
                     gr.Slider(10, 100, label='threshold', value=20), 
                     gr.Image(source='webcam', streaming=True),
                     gr.Checkbox(value=False, label='Live Streaming')
@@ -164,27 +169,49 @@ with gr.Blocks() as demo:
     json_button.click(partial(sepia, plot=False), inputs=json_input_ui, outputs=json_output, api_name='detect_json')
     
     live_input_ui[2].stream(sepia, inputs=live_input_ui, outputs=live_image_output)
-    
-# examples = [
-#     ['bottle and brush, bottle', 10, 'img/gettyimages-510693044-1550590816.jpg'],
-#     ['construction worker, truck, building, window', 20, 'img/272648782_238578478447028_8952244765357561494_n.jpg'],
-#     ['fedex, men, woman', 20, 'img/POD-fy22_sustainability_-37.jpg'],
-#     ['floor, wall, kid, toy on the floor', 20, 'img/istockphoto-1185942848-612x612.jpg'],
-#     ['traffic cone, constrution worker, truck, building, window', 20, 'img/web1_vka-viewstreet-13264.jpg'],
-#     ['plastic bag, trash can, mug, TV, book, scissors, disk, box', 20, 'img/000000396765.jpg'],
-#     ['chocolate donut, glasses, cup, hand', 20, 'img/000000014791.jpg'],
-# ]
-# input_ui = [
-#     gr.Text(label="query", value="person, cup, phone, video game  controller, headphone, box"), 
-#     gr.Slider(10, 100, label='threshold', value=20), 
-#     gr.Image()
-# ]
-# demo = gr.Interface(sepia, input_ui, "image", examples=examples, live=True)
-# live_demo = gr.Interface(
-#     partial(sepia, "person, cup, phone, video game  controller, headphone, box", 20), 
-#     gr.Image(source='webcam', streaming=True), 
-#     "image")
 
-demo.launch(share=True, server_name="0.0.0.0")
+demo.launch(share=True, server_name="0.0.0.0", server_port=6006)
 # sepia('a test', 20, np.zeros([512, 512, 3], dtype=np.uint8))
 
+
+def sanity_check():
+
+    # A = np.ones([512, 512, 3], dtype=np.uint8)
+    A = cv2.imread('/home/ron_zhu/visual_genome/VG_100K/2315427.jpg')
+    aug = eval_augmentor(512)
+    B1 = aug(A)['image']
+    
+    A = Image.open('/home/ron_zhu/visual_genome/VG_100K/2315427.jpg')
+    B2 = preprocess(A)
+    
+    diff = torch.abs(B1 - B2)
+    input_ids = tokenizer(['find all objects'])
+    print((diff < 1e-5).all())
+    print(B1.shape)
+    print(input_ids.shape)
+
+    with torch.no_grad():
+        with torch.cuda.amp.autocast():
+            embed = torch.frombuffer(VisualGenomeFuseDet.find_all_objects, dtype=torch.float32)
+            embed = embed.unsqueeze(0)
+            print(embed.shape)
+
+            B1 = B1.to('cuda').unsqueeze(0)
+            B2 = B2.to('cuda').unsqueeze(0)
+            
+            outputs = model.inference_step(
+                B1, 
+                input_ids.to('cuda'),
+                text_embed=embed.to('cuda'),
+            )
+            
+            outputs = model.inference_step(
+                B2, 
+                input_ids.to('cuda')
+            )
+
+    breakpoint()
+    print(B1)
+    print(B2)
+
+# sanity_check()
