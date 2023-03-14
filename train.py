@@ -71,6 +71,7 @@ def train(config_name=None, **kwargs):
             bbox_augmentor=augmentor,
             background_class=use_background_class,
             split='train',
+            offline_embed=False,
         )
         val_set = pl_data[cfg.trainer.Task.pl_module][1](
             cfg.dataset.val.root,
@@ -79,6 +80,7 @@ def train(config_name=None, **kwargs):
             dataset_stat=cfg.dataset.dataset_stat,
             bbox_augmentor=eval_transform,
             split='val',
+            offline_embed=False,
         )
 
         train_loader = DataLoader(

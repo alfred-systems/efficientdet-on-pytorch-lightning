@@ -613,7 +613,7 @@ class VisGenome_FuseDet(COCO_EfficientDet):
     def training_step(self, batch, batch_idx):
         inputs, que_emb, labels = batch
         
-        if isinstance(que_emb, list) and isinstance(que_emb[0], str):
+        if isinstance(que_emb, (list, tuple)) and isinstance(que_emb[0], str):
             input_ids = self.tokenizer(que_emb).to(self.device)
             que_emb = self.text_encoder.encode_text(input_ids)
         
@@ -634,7 +634,7 @@ class VisGenome_FuseDet(COCO_EfficientDet):
     def validation_step(self, batch, batch_idx):
         inputs, que_emb, labels, scales, pads, extra = batch
 
-        if isinstance(que_emb, list) and isinstance(que_emb[0], str):
+        if isinstance(que_emb, (list, tuple)) and isinstance(que_emb[0], str):
             input_ids = self.tokenizer(que_emb).to(self.device)
             que_emb = self.text_encoder.encode_text(input_ids)
         
@@ -688,11 +688,15 @@ class VisGenome_FuseDet(COCO_EfficientDet):
             logger.info(f'{k}: {v}')
         self.val_map.reset()
     
-    def inference_step(self, images, query_input_ids, th=0.2):
-        text_embed = self.text_encoder.encode_text(query_input_ids)
+    def inference_step(self, images, query_input_ids, text_embed=None, th=0.2):
+        if text_embed is None:
+            text_embed = self.text_encoder.encode_text(query_input_ids)
         preds, _ = self.model(images, text_embed, detect=True)
-        # breakpoint()
+        
         # preds = preds[preds[..., 4] >= th]
+        ks = torch.topk(preds[..., 4], k=max(500, self.max_det), dim=-1).indices
+        preds = [p[k] for p, k in zip(preds, ks)]
+        preds = torch.stack(preds, dim=0)
         print('max: ', preds[..., -1].max())
         
         preds = convert_bbox(preds, 'cxcywh', 'xyxy')

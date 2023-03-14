@@ -297,6 +297,7 @@ class VisualGenome(VisionDataset):
                  annFile: str = '', 
                  bbox_augmentor: Optional[Bbox_Augmentor]=None,
                  split='train',
+                 offline_embed=True,
                  **kwargs):
         assert os.path.exists(img_dir)
         
@@ -315,6 +316,7 @@ class VisualGenome(VisionDataset):
             self.region_anno_subset = self.region_anno[int(n * 0.95):]
             self.augmentor.with_np_image = True
         self.split = split
+        self.offline_embed = offline_embed
     
     @property
     def phrase_embed(self):
@@ -562,7 +564,11 @@ class VisualGenomeFuseDet(VisualGenome):
         labels = torch.cat([bboxes, fixed_one_cls_onehot], dim=-1)
 
         if self.split == 'train':
-            return image, phr_embed, labels
+            if self.offline_embed:
+                return image, phr_embed, labels
+            else:
+                # NOTE: if we are using clip model that is different that the one used to precompute text embedding
+                return image, phrase, labels
         else:
             h, w, c = np_image.shape
             c, _h, _w = image.shape
@@ -577,8 +583,12 @@ class VisualGenomeFuseDet(VisualGenome):
             extra = {
                 'phrases': '&&'.join(phrases),
                 'image_numpy': transform['image_numpy'],
+                'image_id': img_id,
             }
-            return image, phr_embed, labels, scale, pad, extra
+            if self.offline_embed:
+                return image, phr_embed, labels, scale, pad, extra
+            else:
+                return image, phrase, labels, scale, pad, extra
 
 
 class Laion400M(VisionDataset):
