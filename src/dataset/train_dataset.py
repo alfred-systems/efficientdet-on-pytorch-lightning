@@ -535,7 +535,7 @@ class VisualGenomeFuseDet(VisualGenome):
         
         if self.split == 'train' and random.random() < 0.1:
             phr_embed = torch.frombuffer(copy.copy(self.find_all_objects), dtype=torch.float32)
-            phrases = ['find all objects']
+            phrases = 'find all objects'
         else:
             if self.split != 'train':
                 assign = self.subsample(copy.deepcopy(bboxes))
@@ -548,7 +548,7 @@ class VisualGenomeFuseDet(VisualGenome):
             assign = self.keep_similiar_captions(phr_embed[pick_one], phr_embed)
             phr_embed = phr_embed[pick_one]
             bboxes = [b for b, a in zip(bboxes, assign) if a]
-            phrases = [b for b, a in zip(phrases, assign) if a]
+            phrases = phrases[pick_one]
         
         num_box = len(bboxes)
         pad_box = 0
@@ -568,7 +568,7 @@ class VisualGenomeFuseDet(VisualGenome):
                 return image, phr_embed, labels
             else:
                 # NOTE: if we are using clip model that is different that the one used to precompute text embedding
-                return image, phrase, labels
+                return image, phrases, labels
         else:
             h, w, c = np_image.shape
             c, _h, _w = image.shape
@@ -588,7 +588,7 @@ class VisualGenomeFuseDet(VisualGenome):
             if self.offline_embed:
                 return image, phr_embed, labels, scale, pad, extra
             else:
-                return image, phrase, labels, scale, pad, extra
+                return image, phrases, labels, scale, pad, extra
 
 
 class Laion400M(VisionDataset):

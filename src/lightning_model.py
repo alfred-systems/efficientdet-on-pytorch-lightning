@@ -614,8 +614,9 @@ class VisGenome_FuseDet(COCO_EfficientDet):
         inputs, que_emb, labels = batch
         
         if isinstance(que_emb, (list, tuple)) and isinstance(que_emb[0], str):
-            input_ids = self.tokenizer(que_emb).to(self.device)
-            que_emb = self.text_encoder.encode_text(input_ids)
+            with torch.no_grad():
+                input_ids = self.tokenizer(que_emb).to(self.device)
+                que_emb = self.text_encoder.encode_text(input_ids)
         
         preds, anchors = self.model(inputs, que_emb, detect=False)
         sync_labels = convert_bbox(labels, 'xywh', 'cxcywh')

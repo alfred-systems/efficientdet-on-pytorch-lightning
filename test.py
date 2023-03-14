@@ -60,12 +60,13 @@ def dataset_sanity():
         "/home/ron_zhu/visual_genome/VG_100K", 
         "/home/ron_zhu/visual_genome/region_descriptions.json", 
         bbox_safe_augmentor(384),
-        split='val'
+        split='train',
+        offline_embed=False,
     )
 
     # fp16 = {k: v.to(torch.float16) for k, v in dataset.phrase_embed.items()}
     # torch.save(fp16, dataset.cache_file.replace(".pth", ".fp16.pth"))
-    test_loader = DataLoader(dataset, batch_size=4, num_workers=0)
+    test_loader = DataLoader(dataset, batch_size=8, num_workers=0)
 
     for batch in test_loader:
         image = batch[0]
@@ -175,6 +176,6 @@ def dataset_warmup():
     
 if __name__ == "__main__":
     # test()
-    inferece()
-    # dataset_sanity()
+    # inferece()
+    dataset_sanity()
     # dataset_warmup()
