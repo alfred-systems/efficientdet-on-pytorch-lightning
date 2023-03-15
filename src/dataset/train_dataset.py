@@ -581,7 +581,7 @@ class VisualGenomeFuseDet(VisualGenome):
             pad = torch.tensor(pad)
             # print(tmp, bboxes, scale, pad)
             extra = {
-                'phrases': '&&'.join(phrases),
+                'phrases': '&&'.join([phrases] * len(bboxes)),
                 'image_numpy': transform['image_numpy'],
                 'image_id': img_id,
             }
