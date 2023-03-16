@@ -3,6 +3,7 @@ import json
 import glob
 import random
 import copy
+import pickle
 
 from src.utils.bbox import batch_iou
 from src.dataset.utils import *
@@ -112,6 +113,20 @@ CLASS_NAME = {
 }
 GT_CLASS_NAME = {k: f'gt_{v}' for k, v in CLASS_NAME.items()}
 
+
+def get_scale_and_pad(og_img: np.ndarray, aug_img: np.ndarray):
+    h, w, c = og_img.shape
+    c, _h, _w = aug_img.shape
+
+    scale = _h / h
+    diff = np.abs(h - w)
+    p1 = diff // 2
+    p2 = diff - diff // 2
+    pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
+    pad = torch.tensor(pad)
+    return scale, pad
+
+
 class COCO_Detection(VisionDataset):
 
     num_classes = 80
@@ -218,6 +233,92 @@ class COCO_Detection(VisionDataset):
         return image, label
 
 
+class refCOCO(VisionDataset):
+
+    num_classes = 80
+    coco_cat = (i for i in range(1, 91))
+    missing_cat = (12, 26, 29, 30, 45, 66, 68, 69, 71, 83, 91)
+    collect_fn = None
+
+    def __init__(self,
+                 root: str,
+                 coco_anno_file: str='',
+                 ref_anno_file: str='',
+                 bbox_augmentor: Optional[Bbox_Augmentor]=None,
+                 background_class=True,
+                 split='train',
+                 **kwargs):
+
+        super().__init__(root)
+
+        with open(coco_anno_file) as f:
+            self.coco = json.load(f)
+            self.id2coco = {
+                anno['id']: anno
+                for anno in self.coco['annotations']
+            }
+        with open(ref_anno_file, mode='rb') as f:
+            self.ref_anno = pickle.load(f)
+            self.ref_anno = [anno for anno in self.ref_anno if anno['split'] == split]
+        
+        self.ids = list(sorted(anno['image_id'] for anno in self.ref_anno))
+        self.num_classes += int(background_class)
+
+        self.augmentor = bbox_augmentor
+        if self.augmentor:
+            assert self.augmentor.format == 'coco', \
+                'the bounding box format must be coco, (x_min, y_min, width, height)'
+            assert self.augmentor.ToTensor is True, \
+                'the image should be returned as a tensor'
+
+        self.cat_table = category_filter(self.coco_cat, self.missing_cat)
+
+    def __len__(self):
+        return len(self.ids)
+
+    def __getitem__(self, index: int) -> Tuple[Tensor, Tensor]:
+        anno_r = self.ref_anno[index]
+        anno_c = self.id2coco[anno_r['ann_id']]
+        img_id = anno_r['image_id']
+
+        img_path = os.path.join(self.root, 'train2017', f"{img_id:012}.jpg")
+        if not os.path.exists(img_path):
+            img_path = os.path.join(self.root, 'val2017', f"{img_id:012}.jpg")
+        np_image = image = cv2.imread(os.path.join(self.root, img_path))
+        bboxes = [anno_c['bbox']]
+
+        if self.augmentor:
+            transform = self.augmentor(image, bboxes)
+            image, bboxes = transform.values()
+        else:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = np.transpose(image, (2, 0, 1))
+            image = torch.from_numpy(image)
+
+
+        bboxes = torch.from_numpy(np.asarray(bboxes))
+        captions = [s['raw'] for s in anno_r['sentences']]
+        box_cap = ", ".join(captions)
+
+        category_ids = torch.ones([len(bboxes)], dtype=torch.float)
+        bboxes = torch.from_numpy(np.asarray(bboxes))
+        label = torch.cat((bboxes, category_ids), dim=1)
+
+        if len(label) == 0:
+            label = torch.zeros((0, self.num_classes + 4), dtype=torch.int8)
+
+        if self.split == 'train':
+            return image, box_cap, label
+        else:
+            scale, pad = get_scale_and_pad(np_image, image)
+            # print(tmp, bboxes, scale, pad)
+            extra = {
+                'phrases': '&&'.join(box_cap),
+                'image_numpy': transform['image_numpy'],
+            }
+            return image, box_cap, label, scale, pad, extra
+
+
 class COCOFuseDet(COCO_Detection):
     """
     COCO dataset loader that use caption to indicate box label instead of class id.
@@ -269,15 +370,7 @@ class COCOFuseDet(COCO_Detection):
         if self.split == 'train':
             return image, phrases, label
         else:
-            h, w, c = np_image.shape
-            c, _h, _w = image.shape
-
-            scale = _h / h
-            diff = np.abs(h - w)
-            p1 = diff // 2
-            p2 = diff - diff // 2
-            pad = (0, p1, 0, p2) if w >= h else (p1, 0, p2, 0)
-            pad = torch.tensor(pad)
+            scale, pad = get_scale_and_pad(np_image, image)
             # print(tmp, bboxes, scale, pad)
             extra = {
                 'phrases': '&&'.join(phrases),
