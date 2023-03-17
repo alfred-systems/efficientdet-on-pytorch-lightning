@@ -263,6 +263,7 @@ class refCOCO(VisionDataset):
         
         self.ids = list(sorted(anno['image_id'] for anno in self.ref_anno))
         self.num_classes += int(background_class)
+        self.split = split
 
         self.augmentor = bbox_augmentor
         if self.augmentor:
@@ -270,6 +271,8 @@ class refCOCO(VisionDataset):
                 'the bounding box format must be coco, (x_min, y_min, width, height)'
             assert self.augmentor.ToTensor is True, \
                 'the image should be returned as a tensor'
+            if split == 'val':
+                self.augmentor.with_np_image = True
 
         self.cat_table = category_filter(self.coco_cat, self.missing_cat)
 
@@ -288,8 +291,9 @@ class refCOCO(VisionDataset):
         bboxes = [anno_c['bbox']]
 
         if self.augmentor:
-            transform = self.augmentor(image, bboxes)
-            image, bboxes = transform.values()
+            transform = self.augmentor(image, bboxes, [0] * len(bboxes))
+            image = transform['image']
+            bboxes = transform['bboxes']
         else:
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = np.transpose(image, (2, 0, 1))
@@ -300,12 +304,12 @@ class refCOCO(VisionDataset):
         captions = [s['raw'] for s in anno_r['sentences']]
         box_cap = ", ".join(captions)
 
-        category_ids = torch.ones([len(bboxes)], dtype=torch.float)
+        category_ids = torch.ones([len(bboxes), 1], dtype=torch.float)
         bboxes = torch.from_numpy(np.asarray(bboxes))
         label = torch.cat((bboxes, category_ids), dim=1)
 
         if len(label) == 0:
-            label = torch.zeros((0, self.num_classes + 4), dtype=torch.int8)
+            label = torch.zeros((0, 5), dtype=torch.float)
 
         if self.split == 'train':
             return image, box_cap, label
@@ -313,7 +317,7 @@ class refCOCO(VisionDataset):
             scale, pad = get_scale_and_pad(np_image, image)
             # print(tmp, bboxes, scale, pad)
             extra = {
-                'phrases': '&&'.join(box_cap),
+                'phrases': '&&'.join([box_cap] * len(bboxes)),
                 'image_numpy': transform['image_numpy'],
             }
             return image, box_cap, label, scale, pad, extra
@@ -386,21 +390,22 @@ class VisualGenome(VisionDataset):
     collect_fn = None
     max_det = 300  # NOTE: VG have max 267/ min 3/ avg 50 regions per image
 
-    def __init__(self, img_dir: str, 
+    def __init__(self, 
+                 root: str, 
                  annFile: str = '', 
                  bbox_augmentor: Optional[Bbox_Augmentor]=None,
                  split='train',
                  offline_embed=True,
                  **kwargs):
-        assert os.path.exists(img_dir)
+        assert os.path.exists(root)
         
-        self.img_dir = img_dir
+        self.root = root
         with open(annFile, mode='r') as f:
             self.region_anno = json.load(f)
         self.augmentor = bbox_augmentor
         
-        self.cache_file = os.path.join(img_dir, "embed_cache.fp16.pth")
-        self.cache_dir = os.path.join(img_dir, "region_embeds")
+        self.cache_file = os.path.join(root, "embed_cache.fp16.pth")
+        self.cache_dir = os.path.join(root, "region_embeds")
         
         n = len(self.region_anno)
         if split == 'train':

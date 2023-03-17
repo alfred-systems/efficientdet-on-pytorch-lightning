@@ -1,0 +1,16 @@
+train:
+  root: /home/ron_zhu/mscoco
+  coco_anno_file: /home/ron_zhu/mscoco/refcoco+/instances.json
+  ref_anno_file: /home/ron_zhu/mscoco/refcoco+/refs_unc.p
+
+val:
+  root: /home/ron_zhu/mscoco
+  coco_anno_file: /home/ron_zhu/mscoco/refcoco+/instances.json
+  ref_anno_file: /home/ron_zhu/mscoco/refcoco+/refs_unc.p
+
+test:
+  root: 
+
+dataset_stat:
+  - [0.485, 0.456, 0.406]   # mean
+  - [0.229, 0.224, 0.225]   # std

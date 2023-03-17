@@ -39,7 +39,7 @@ preprocess = transforms.Compose([
 ])
 # preprocess = eval_augmentor(512)
 tokenizer = open_clip.get_tokenizer("convnext_large_d")
-model = VisGenome_FuseDet.load_from_checkpoint("last.ckpt").cuda().to(torch.float16)
+model = VisGenome_FuseDet.load_from_checkpoint("last.ckpt", strict=False).cuda().to(torch.float16)
 model.eval()
 
 

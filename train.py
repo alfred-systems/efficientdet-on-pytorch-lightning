@@ -18,7 +18,13 @@ def train(config_name=None, **kwargs):
     def _train(cfg: DictConfig):
         from src.lightning_model import COCO_EfficientDet, Laion400m_EfficientDet, VisGenome_EfficientDet, VisGenome_FuseDet
 
-        from src.dataset.train_dataset import COCO_Detection, Laion400M, VisualGenome, VisualGenomeFuseDet
+        from src.dataset.train_dataset import (
+            COCO_Detection,
+            Laion400M,
+            VisualGenome,
+            VisualGenomeFuseDet,
+            refCOCO,
+        )
         from src.dataset.val_dataset import Validate_Detection
         from src.dataset.bbox_augmentor import default_augmentor, bbox_safe_augmentor, eval_augmentor
         from src.dataset.utils import make_mini_batch
@@ -32,6 +38,7 @@ def train(config_name=None, **kwargs):
             "Laion400m_EfficientDet": Laion400m_EfficientDet,
             "VisGenome_EfficientDet": VisGenome_EfficientDet,
             "VisGenome_FuseDet": VisGenome_FuseDet,
+            "refCoco_FuseDet": VisGenome_FuseDet,
         }
 
         use_background_class = cfg.use_background_class if 'use_background_class' in cfg else True
@@ -47,15 +54,12 @@ def train(config_name=None, **kwargs):
             **cfg.model.loss,
             **cfg.model.nms,
             **cfg.model.optimizer,
-            val_annFile=cfg.dataset.val.annFile, 
+            # val_annFile=cfg.dataset.val.annFile, 
             background_class=use_background_class,
             freeze_backbone=freeze_backbone)
         
         # augmentor
-        if cfg.trainer.Task.pl_module == 'VisGenome_FuseDet':
-            augmentor = bbox_safe_augmentor(pl_model.model.img_size)
-        else:
-            augmentor = default_augmentor(pl_model.model.img_size)
+        augmentor = bbox_safe_augmentor(pl_model.model.img_size)
         eval_transform = eval_augmentor(pl_model.model.img_size)
 
         # dataset and dataloader
@@ -64,20 +68,19 @@ def train(config_name=None, **kwargs):
             "Laion400m_EfficientDet": (Laion400M, Laion400M),
             "VisGenome_EfficientDet": (VisualGenome, VisualGenome),
             "VisGenome_FuseDet": (VisualGenomeFuseDet, VisualGenomeFuseDet),
+            "refCoco_FuseDet": (refCOCO, refCOCO),
         }
         train_set = pl_data[cfg.trainer.Task.pl_module][0](
-            cfg.dataset.train.root,
-            annFile=cfg.dataset.train.annFile,
+            **cfg.dataset.train,
             bbox_augmentor=augmentor,
             background_class=use_background_class,
             split='train',
             offline_embed=False,
         )
         val_set = pl_data[cfg.trainer.Task.pl_module][1](
-            cfg.dataset.val.root,
-            annFile=cfg.dataset.val.annFile,
-            img_size=pl_model.model.img_size,
+            **cfg.dataset.val,
             dataset_stat=cfg.dataset.dataset_stat,
+            img_size=pl_model.model.img_size,
             bbox_augmentor=eval_transform,
             split='val',
             offline_embed=False,
@@ -85,10 +88,14 @@ def train(config_name=None, **kwargs):
 
         train_loader = DataLoader(
             train_set, batch_size=cfg.batch_size, shuffle=True, drop_last=True,
-            collate_fn=train_set.collect_fn, num_workers=cfg.num_workers, multiprocessing_context='spawn')
+            collate_fn=train_set.collect_fn, num_workers=cfg.num_workers,
+            multiprocessing_context='spawn' if cfg.num_workers > 0 else None
+        )
         val_loader = DataLoader(
             val_set, batch_size=cfg.batch_size, drop_last=True, 
-            num_workers=cfg.num_workers, multiprocessing_context='spawn')
+            num_workers=cfg.num_workers,
+            multiprocessing_context='spawn' if cfg.num_workers > 0 else None
+        )
 
         # trainer
         cfg_trainer = Config_Trainer(cfg.trainer)()

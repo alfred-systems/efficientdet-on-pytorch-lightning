@@ -45,7 +45,7 @@ def dataset_sanity():
     # from src.dataset.val_dataset import COCO_Detection
     from src.dataset.val_dataset import Validate_Detection
     from src.dataset.bbox_augmentor import debug_augmentor, bbox_safe_augmentor
-    from src.dataset.train_dataset import Laion400M, VisualGenome, VisualGenomeFuseDet
+    from src.dataset.train_dataset import Laion400M, VisualGenome, VisualGenomeFuseDet, refCOCO
 
     # augmentor = debug_augmentor(512)
     # dataset = COCO_Detection(
@@ -56,10 +56,18 @@ def dataset_sanity():
     #     "/home/ron/Downloads/mscoco/val2017", 
     #     "/home/ron/Downloads/mscoco/annotations_trainval2017/instances_val2017.json",
     #     512)
-    dataset = VisualGenomeFuseDet(
-        "/home/ron_zhu/visual_genome/VG_100K", 
-        "/home/ron_zhu/visual_genome/region_descriptions.json", 
-        bbox_safe_augmentor(384),
+    # dataset = VisualGenomeFuseDet(
+    #     "/home/ron_zhu/visual_genome/VG_100K", 
+    #     "/home/ron_zhu/visual_genome/region_descriptions.json", 
+    #     bbox_safe_augmentor(384),
+    #     split='train',
+    #     offline_embed=False,
+    # )
+    dataset = refCOCO(
+        "/home/ron_zhu/mscoco", 
+        coco_anno_file="/home/ron_zhu/mscoco/refcoco+/instances.json",
+        ref_anno_file="/home/ron_zhu/mscoco/refcoco+/refs_unc.p",
+        bbox_augmentor=bbox_safe_augmentor(384),
         split='train',
         offline_embed=False,
     )
@@ -83,12 +91,12 @@ def dataset_sanity():
 def inferece():
     from src.lightning_model import COCO_EfficientDet, VisGenome_FuseDet
     from src.dataset.val_dataset import Validate_Detection
-    from src.dataset.train_dataset import Laion400M, VisualGenome, VisualGenomeFuseDet
+    from src.dataset.train_dataset import Laion400M, VisualGenome, VisualGenomeFuseDet, refCOCO
     from src.dataset.bbox_augmentor import debug_augmentor, bbox_safe_augmentor
 
-    pl_model = VisGenome_FuseDet.load_from_checkpoint("last.ckpt")
+    pl_model = VisGenome_FuseDet.load_from_checkpoint("last.ckpt", strict=False)
     print('model loaded')
-    device = 'cpu'
+    device = 'cuda'
     pl_model = pl_model.to(device).to(torch.float16)
     pl_model.eval()
     
@@ -97,7 +105,8 @@ def inferece():
         "/home/ron_zhu/visual_genome/VG_100K", 
         "/home/ron_zhu/visual_genome/region_descriptions.json", 
         bbox_safe_augmentor(512),
-        split='val'
+        split='val',
+        offline_embed=False,
     )
     for batch_size in [1, 1, 4, 8, 16, 32]:
         test_loader = DataLoader(test_set, batch_size=batch_size)
@@ -107,9 +116,10 @@ def inferece():
             for i, batch in enumerate(test_loader):
                 if i > 40: break
                 # print(batch[0])
+                text = pl_model.tokenizer(batch[1]).to(device)
+                text = pl_model.text_encoder.encode_text(text)
                 t1 = time.time()
                 img = batch[0].to(device).to(torch.float16)
-                text = batch[1].to(device).to(torch.float16)
 
                 predict = pl_model(img, text, detect=True)[0]
                 
